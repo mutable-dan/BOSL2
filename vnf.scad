@@ -3,7 +3,6 @@
 //   VNF structures, holding Vertices 'N' Faces for use with `polyhedron().`
 // Includes:
 //   include <BOSL2/std.scad>
-//   include <BOSL2/vnf.scad>
 //////////////////////////////////////////////////////////////////////
 
 
@@ -156,17 +155,19 @@ function vnf_merge(vnfs, cleanup=false) =
     ) [
         [for (vnf=vnfs) each vnf[0]],
         [
-            for (i = idx(vnfs)) let(
-                vnf = vnfs[i],
-                verts = vnf[0],
-                faces = vnf[1]
-            )
-            for (face = faces) let(
-                dface = !cleanup ? face :
-                    deduplicate_indexed(verts, face, closed=true)
-            )
-            if (len(dface) >= 3)
-            [ for (j = dface) offs[i] + j ]
+            for (i = idx(vnfs))
+              let(
+                  vnf = vnfs[i],
+                  verts = vnf[0],
+                  faces = vnf[1]
+              )
+              for (face = faces)
+                 let(
+                     dface = !cleanup ? face
+                                      : deduplicate_indexed(verts, face, closed=true)
+                 )
+                 if (len(dface) >= 3)
+                     [ for (j = dface) offs[i] + j ]
         ]
     ];
 
@@ -188,6 +189,15 @@ function vnf_compact(vnf) =
     ) vnf_add_faces(faces=faces);
 
 
+// Function: vnf_reverse_faces()
+// Usage:
+//   rvnf = vnf_reverse_faces(vnf);
+// Description:
+//   Reverses the facing of all the faces in the given VNF.
+function vnf_reverse_faces(vnf) =
+    [vnf[0], [for (face=vnf[1]) reverse(face)]];
+
+
 // Function: vnf_triangulate()
 // Usage:
 //   vnf2 = vnf_triangulate(vnf);
@@ -207,7 +217,12 @@ function vnf_triangulate(vnf) =
 //   Creates a VNF structure from a vertex list, by dividing the vertices into columns and rows,
 //   adding faces to tile the surface.  You can optionally have faces added to wrap the last column
 //   back to the first column, or wrap the last row to the first.  Endcaps can be added to either
-//   the first and/or last rows.
+//   the first and/or last rows.  The style parameter determines how the quadrilaterals are divided into
+//   triangles.  The default style is an arbitrary, systematic subdivision in the same direction.  The "alt" style
+//   is the uniform subdivision in the other (alternate) direction.  The "min_edge" style picks the shorter edge to
+//   subdivide for each quadrilateral, so the division may not be uniform across the shape.  The "quincunx" style
+//   adds a vertex in the center of each quadrilateral and creates four triangles, and the "convex" style
+//   chooses the locally convex subdivision.  
 // Arguments:
 //   points = A list of vertices to divide into columns and rows.
 //   caps = If true, add endcap faces to the first AND last rows.
@@ -216,7 +231,7 @@ function vnf_triangulate(vnf) =
 //   col_wrap = If true, add faces to connect the last column to the first.
 //   row_wrap = If true, add faces to connect the last row to the first.
 //   reverse = If true, reverse all face normals.
-//   style = The style of subdividing the quads into faces.  Valid options are "default", "alt", "quincunx", and "convex".
+//   style = The style of subdividing the quads into faces.  Valid options are "default", "alt", "min_edge", "quincunx", and "convex".
 //   vnf = If given, add all the vertices and faces to this existing VNF structure.
 // Example(3D):
 //   vnf = vnf_vertex_array(
@@ -279,82 +294,167 @@ function vnf_vertex_array(
     reverse=false,
     style="default",
     vnf=EMPTY_VNF
-) =
-    assert((!caps)||(caps&&col_wrap))
-    assert(in_list(style,["default","alt","quincunx", "convex"]))
-        assert(is_consistent(points), "Non-rectangular or invalid point array")
+) = 
+    assert(!(any([caps,cap1,cap2]) && !col_wrap), "col_wrap must be true if caps are requested")
+    assert(!(any([caps,cap1,cap2]) && row_wrap), "Cannot combine caps with row_wrap")
+    assert(in_list(style,["default","alt","quincunx", "convex","min_edge"]))
+    assert(is_consistent(points), "Non-rectangular or invalid point array")
     let(
         pts = flatten(points),
         pcnt = len(pts),
         rows = len(points),
-        cols = len(points[0]),
+        cols = len(points[0])
+    )
+    rows<=1 || cols<=1 ? vnf :
+    let(
         cap1 = first_defined([cap1,caps,false]),
         cap2 = first_defined([cap2,caps,false]),
         colcnt = cols - (col_wrap?0:1),
-        rowcnt = rows - (row_wrap?0:1)
+        rowcnt = rows - (row_wrap?0:1),
+        verts = [
+            each pts,
+            if (style=="quincunx") 
+                for (r = [0:1:rowcnt-1], c = [0:1:colcnt-1]) 
+                   let(
+                       i1 = ((r+0)%rows)*cols + ((c+0)%cols),
+                       i2 = ((r+1)%rows)*cols + ((c+0)%cols),
+                       i3 = ((r+1)%rows)*cols + ((c+1)%cols),
+                       i4 = ((r+0)%rows)*cols + ((c+1)%cols)
+                   )
+                   mean([pts[i1], pts[i2], pts[i3], pts[i4]])
+        ]
     )
-    rows<=1 || cols<=1 ? vnf : 
-    vnf_merge(cleanup=true, [
-        vnf, [
-            concat(
-                pts,
-                style!="quincunx"? [] : [
-                    for (r = [0:1:rowcnt-1]) (
-                        for (c = [0:1:colcnt-1]) (
-                            let(
-                                i1 = ((r+0)%rows)*cols + ((c+0)%cols),
-                                i2 = ((r+1)%rows)*cols + ((c+0)%cols),
-                                i3 = ((r+1)%rows)*cols + ((c+1)%cols),
-                                i4 = ((r+0)%rows)*cols + ((c+1)%cols)
-                            ) mean([pts[i1], pts[i2], pts[i3], pts[i4]])
-                        )
-                    )
-                ]
-            ),
-            concat(
-                [
-                    for (r = [0:1:rowcnt-1]) (
-                        for (c = [0:1:colcnt-1]) each (
-                            let(
-                                i1 = ((r+0)%rows)*cols + ((c+0)%cols),
-                                i2 = ((r+1)%rows)*cols + ((c+0)%cols),
-                                i3 = ((r+1)%rows)*cols + ((c+1)%cols),
-                                i4 = ((r+0)%rows)*cols + ((c+1)%cols),
-                                faces = style=="quincunx"? (
-                                    let(i5 = pcnt + r*colcnt + c)
-                                    [[i1,i5,i2],[i2,i5,i3],[i3,i5,i4],[i4,i5,i1]]
-                                ) : style=="alt"? (
-                                    [[i1,i4,i2],[i2,i4,i3]]
-                                ) : style=="convex"? let(
-                                    fsets = [
-                                        [[i1,i4,i2],[i2,i4,i3]],
-                                        [[i1,i3,i2],[i1,i4,i3]]
-                                    ],
-                                    cps = [for (fset=fsets) [for (f=fset) mean(select(pts,f))]],
-                                    ns = cps + [for (fset=fsets) [for (f=fset) polygon_normal(select(pts,f))]],
-                                    dists = [for (i=idx(fsets)) norm(cps[i][1]-cps[i][0]) - norm(ns[i][1]-ns[i][0])],
-                                    test = reverse? dists[0]>dists[1] : dists[0]<dists[1]
-                                ) fsets[test?0:1] : (
-                                    [[i1,i3,i2],[i1,i4,i3]]
-                                ),
-                                rfaces = reverse? [for (face=faces) reverse(face)] : faces
-                            ) rfaces
-                        )
-                    )
-                ],
-                !cap1? [] : [
-                    reverse?
-                        [for (c = [0:1:cols-1]) c] :
-                        [for (c = [cols-1:-1:0]) c]
-                ],
-                !cap2? [] : [
-                    reverse?
-                        [for (c = [cols-1:-1:0]) (rows-1)*cols + c] :
-                        [for (c = [0:1:cols-1]) (rows-1)*cols + c]
-                ]
-            )
+    vnf_merge(cleanup=false, [
+        vnf,
+        [
+              verts,
+              [
+               for (r = [0:1:rowcnt-1], c=[0:1:colcnt-1])
+                 each
+                   let(
+                       i1 = ((r+0)%rows)*cols + ((c+0)%cols),
+                       i2 = ((r+1)%rows)*cols + ((c+0)%cols),
+                       i3 = ((r+1)%rows)*cols + ((c+1)%cols),
+                       i4 = ((r+0)%rows)*cols + ((c+1)%cols),
+                       faces =
+                            style=="quincunx"? 
+                              let(i5 = pcnt + r*colcnt + c)
+                              [[i1,i5,i2],[i2,i5,i3],[i3,i5,i4],[i4,i5,i1]]
+                          : style=="alt"? 
+                              [[i1,i4,i2],[i2,i4,i3]]
+                          : style=="min_edge"?
+                              let(
+                                   d42=norm(pts[i4]-pts[i2]),
+                                   d13=norm(pts[i1]-pts[i3]),
+                                   shortedge = d42<=d13 ? [[i1,i4,i2],[i2,i4,i3]]
+                                                        : [[i1,i3,i2],[i1,i4,i3]]
+                              )
+                              shortedge
+                          : style=="convex"?  
+                              let(   // Find normal for 3 of the points.  Is the other point above or below?
+                                  n = (reverse?-1:1)*cross(pts[i2]-pts[i1],pts[i3]-pts[i1]),
+                                  convexfaces = n==0 ? [[i1,i4,i3]]
+                                              : n*pts[i4] > n*pts[i1] ? [[i1,i4,i2],[i2,i4,i3]]
+                                                                      : [[i1,i3,i2],[i1,i4,i3]]
+                              )
+                              convexfaces
+                          : [[i1,i3,i2],[i1,i4,i3]],
+                       // remove degenerate faces 
+                       culled_faces= [for(face=faces)
+                           if (norm(verts[face[0]]-verts[face[1]])>EPSILON &&
+                               norm(verts[face[1]]-verts[face[2]])>EPSILON && 
+                               norm(verts[face[2]]-verts[face[0]])>EPSILON) 
+                               face
+                       ],
+                       rfaces = reverse? [for (face=culled_faces) reverse(face)] : culled_faces
+                   )
+                   rfaces,
+                if (cap1) count(cols,reverse=!reverse),
+                if (cap2) count(cols,(rows-1)*cols, reverse=reverse)
+              ] 
         ]
     ]);
+
+
+// Function: vnf_tri_array()
+// Usage:
+//   vnf = vnf_tri_array(points, <row_wrap>, <reverse>)
+// Description:
+//   Produces a vnf from an array of points where each row length can differ from the adjacent rows by up to 2 in length.  This enables
+//   the construction of triangular VNF patches.  The resulting VNF can be wrapped along the rows by setting `row_wrap` to true.
+// Arguments:
+//   points = List of point lists for each row
+//   row_wrap = If true then add faces connecting the first row and last row.  These rows must differ by at most 2 in length.
+//   reverse = Set this to reverse the direction of the faces
+// Examples:  Each row has one more point than the preceeding one.
+//   pts = [for(y=[1:1:10]) [for(x=[0:y-1]) [x,y,y]]];
+//   vnf = vnf_tri_array(pts);
+//   vnf_wireframe(vnf,d=.1);
+//   color("red")move_copies(flatten(pts)) sphere(r=.15,$fn=9);
+// Examples:  Each row has one more point than the preceeding one.
+//   pts = [for(y=[0:2:10]) [for(x=[-y/2:y/2]) [x,y,y]]];
+//   vnf = vnf_tri_array(pts);
+//   vnf_wireframe(vnf,d=.1);
+//   color("red")move_copies(flatten(pts)) sphere(r=.15,$fn=9);
+// Example: Chaining two VNFs to construct a cone with one point length change between rows.
+//   pts1 = [for(z=[0:10]) path3d(arc(3+z,r=z/2+1, angle=[0,180]),10-z)];
+//   pts2 = [for(z=[0:10]) path3d(arc(3+z,r=z/2+1, angle=[180,360]),10-z)];
+//   vnf = vnf_tri_array(pts1,
+//                       vnf=vnf_tri_array(pts2));
+//   color("green")vnf_wireframe(vnf,d=.1);
+//   vnf_polyhedron(vnf);
+// Example: Cone with length change two between rows
+//   pts1 = [for(z=[0:1:10]) path3d(arc(3+2*z,r=z/2+1, angle=[0,180]),10-z)];
+//   pts2 = [for(z=[0:1:10]) path3d(arc(3+2*z,r=z/2+1, angle=[180,360]),10-z)];
+//   vnf = vnf_tri_array(pts1,
+//                       vnf=vnf_tri_array(pts2));
+//   color("green")vnf_wireframe(vnf,d=.1);
+//   vnf_polyhedron(vnf);
+// Example: Point count can change irregularly
+//   lens = [10,9,7,5,6,8,8,10];
+//   pts = [for(y=idx(lens)) lerpn([-lens[y],y,y],[lens[y],y,y],lens[y])];
+//   vnf = vnf_tri_array(pts);
+//   vnf_wireframe(vnf,d=.1);
+//   color("red")move_copies(flatten(pts)) sphere(r=.15,$fn=9);
+function vnf_tri_array(points, row_wrap=false, reverse=false, vnf=EMPTY_VNF) = 
+   let(
+       lens = [for(row=points) len(row)],
+       rowstarts = [0,each cumsum(lens)],
+       faces =
+          [for(i=[0:1:len(points) - 1 - (row_wrap ? 0 : 1)]) each
+            let(
+                rowstart = rowstarts[i],
+                nextrow = select(rowstarts,i+1),
+                delta = select(lens,i+1)-lens[i]
+            )
+            delta == 0 ?
+              [for(j=[0:1:lens[i]-2]) reverse ? [j+rowstart+1, j+rowstart, j+nextrow] : [j+rowstart, j+rowstart+1, j+nextrow],
+               for(j=[0:1:lens[i]-2]) reverse ? [j+rowstart+1, j+nextrow, j+nextrow+1] : [j+rowstart+1, j+nextrow+1, j+nextrow]] :
+            delta == 1 ?
+              [for(j=[0:1:lens[i]-2]) reverse ? [j+rowstart+1, j+rowstart, j+nextrow+1] : [j+rowstart, j+rowstart+1, j+nextrow+1],
+               for(j=[0:1:lens[i]-1]) reverse ? [j+rowstart, j+nextrow, j+nextrow+1] : [j+rowstart, j+nextrow+1, j+nextrow]] :
+            delta == -1 ?
+              [for(j=[0:1:lens[i]-3]) reverse ? [j+rowstart+1, j+nextrow, j+nextrow+1]: [j+rowstart+1, j+nextrow+1, j+nextrow],
+               for(j=[0:1:lens[i]-2]) reverse ? [j+rowstart+1, j+rowstart, j+nextrow] : [j+rowstart, j+rowstart+1, j+nextrow]] :
+            let(count = floor((lens[i]-1)/2))
+            delta == 2 ?
+              [
+               for(j=[0:1:count-1]) reverse ? [j+rowstart+1, j+rowstart, j+nextrow+1] : [j+rowstart, j+rowstart+1, j+nextrow+1],       // top triangles left
+               for(j=[count:1:lens[i]-2]) reverse ? [j+rowstart+1, j+rowstart, j+nextrow+2] : [j+rowstart, j+rowstart+1, j+nextrow+2], // top triangles right
+               for(j=[0:1:count]) reverse ? [j+rowstart, j+nextrow, j+nextrow+1] : [j+rowstart, j+nextrow+1, j+nextrow],                        // bot triangles left
+               for(j=[count+1:1:select(lens,i+1)-2]) reverse ? [j+rowstart-1, j+nextrow, j+nextrow+1] : [j+rowstart-1, j+nextrow+1, j+nextrow], // bot triangles right
+              ] :
+            delta == -2 ?
+              [
+               for(j=[0:1:count-2]) reverse ? [j+nextrow, j+nextrow+1, j+rowstart+1] : [j+nextrow, j+rowstart+1, j+nextrow+1],
+               for(j=[count-1:1:lens[i]-4]) reverse ? [j+nextrow,j+nextrow+1,j+rowstart+2] : [j+nextrow,j+rowstart+2, j+nextrow+1],
+               for(j=[0:1:count-1]) reverse ? [j+nextrow, j+rowstart+1, j+rowstart] : [j+nextrow, j+rowstart, j+rowstart+1],
+               for(j=[count:1:select(lens,i+1)]) reverse ? [ j+nextrow-1, j+rowstart+1, j+rowstart]: [ j+nextrow-1, j+rowstart, j+rowstart+1],
+              ] :
+            assert(false,str("Unsupported row length difference of ",delta, " between row ",i," and ",(i+1)%len(points)))
+        ])
+    vnf_merge(cleanup=true, [vnf, [flatten(points), faces]]);
+
 
 
 // Module: vnf_polyhedron()
@@ -386,7 +486,7 @@ module vnf_polyhedron(vnf, convexity=2, extent=true, cp=[0,0,0], anchor="origin"
 // Usage:
 //   vnf_wireframe(vnf, <r|d>);
 // Description:
-//   Given a VNF, creates a wire frame ball-and-stick model of the polyhedron with a cylinder for each edge and a sphere at each vertex. 
+//   Given a VNF, creates a wire frame ball-and-stick model of the polyhedron with a cylinder for each edge and a sphere at each vertex.
 // Arguments:
 //   vnf = A vnf structure
 //   r|d = radius or diameter of the cylinders forming the wire frame.  Default: r=1
@@ -394,12 +494,12 @@ module vnf_polyhedron(vnf, convexity=2, extent=true, cp=[0,0,0], anchor="origin"
 //   $fn=32;
 //   ball = sphere(r=20, $fn=6);
 //   vnf_wireframe(ball,d=1);
-// Example: 
+// Example:
 //  include<BOSL2/polyhedra.scad>
 //  $fn=32;
 //  cube_oct = regular_polyhedron_info("vnf", name="cuboctahedron", or=20);
 //  vnf_wireframe(cube_oct);
-// Example: The spheres at the vertex are imperfect at aligning with the cylinders, so especially at low $fn things look prety ugly.  This is normal.  
+// Example: The spheres at the vertex are imperfect at aligning with the cylinders, so especially at low $fn things look prety ugly.  This is normal.
 //  include<BOSL2/polyhedra.scad>
 //  $fn=8;
 //  octahedron = regular_polyhedron_info("vnf", name="octahedron", or=20);
@@ -413,7 +513,7 @@ module vnf_wireframe(vnf, r, d)
                  ]);
   for (e=edges) extrude_from_to(vertex[e[0]],vertex[e[1]]) circle(r=r);
   move_copies(vertex) sphere(r=r);
-}  
+}
 
 
 // Function: vnf_volume()
@@ -440,18 +540,13 @@ function vnf_volume(vnf) =
 //   Returns the centroid of the given manifold VNF.  The VNF must describe a valid polyhedron with consistent face direction and
 //   no holes; otherwise the results are undefined.
 
-// Divide the solid up into tetrahedra with the origin as one vertex.  The centroid of a tetrahedron is the average of its vertices.
-// The centroid of the total is the volume weighted average.  
+// Divide the solid up into tetrahedra with the origin as one vertex.  
+// The centroid of a tetrahedron is the average of its vertices.
+// The centroid of the total is the volume weighted average.
 function vnf_centroid(vnf) =
+    assert(is_vnf(vnf) && len(vnf[0])!=0 ) 
     let(
         verts = vnf[0],
-        vol = sum([
-            for(face=vnf[1], j=[1:1:len(face)-2]) let(
-                v0  = verts[face[0]],
-                v1  = verts[face[j]],
-                v2  = verts[face[j+1]]
-            ) cross(v2,v1)*v0
-        ]),
         pos = sum([
             for(face=vnf[1], j=[1:1:len(face)-2]) let(
                 v0  = verts[face[0]],
@@ -459,10 +554,11 @@ function vnf_centroid(vnf) =
                 v2  = verts[face[j+1]],
                 vol = cross(v2,v1)*v0
             )
-            (v0+v1+v2)*vol
+            [ vol, (v0+v1+v2)*vol ]
         ])
     )
-    pos/vol/4;
+    assert(!approx(pos[0],0, EPSILON), "The vnf has self-intersections.")
+    pos[1]/pos[0]/4;
 
 
 function _triangulate_planar_convex_polygons(polys) =
@@ -616,16 +712,17 @@ function vnf_bend(vnf,r,d,axis="Z") =
 //   bad edges and vertices, overlaid on a transparent gray polyhedron of the VNF.
 //   .
 //   Currently checks for these problems:
-//   Type    | Color    | Code         | Message 
+//   Type    | Color    | Code         | Message
 //   ------- | -------- | ------------ | ---------------------------------
-//   WARNING | Yellow   | BIG_FACE     | Face has more than 3 vertices, and may confuse CGAL
-//   WARNING | Brown    | NULL_FACE   | Face has zero area
-//   ERROR   | Cyan     | NONPLANAR    | Face vertices are not coplanar
-//   ERROR   | Orange   | OVRPOP_EDGE  | Too many faces attached at edge
-//   ERROR   | Violet   | REVERSAL     | Faces reverse across edge
-//   ERROR   | Red      | T_JUNCTION   | Vertex is mid-edge on another Face
-//   ERROR   | Blue     | FACE_ISECT   | Faces intersect
-//   ERROR   | Magenta  | HOLE_EDGE    | Edge bounds Hole
+//   WARNING | Yellow   | BIG_FACE     | Face has more than 3 vertices, and may confuse CGAL.
+//   WARNING | Brown    | NULL_FACE    | Face has zero area.
+//   ERROR   | Cyan     | NONPLANAR    | Face vertices are not coplanar.
+//   ERROR   | Brown    | DUP_FACE     | Multiple instances of the same face.
+//   ERROR   | Orange   | MULTCONN     | Multiply Connected Geometry. Too many faces attached at Edge.
+//   ERROR   | Violet   | REVERSAL     | Faces reverse across edge.
+//   ERROR   | Red      | T_JUNCTION   | Vertex is mid-edge on another Face.
+//   ERROR   | Blue     | FACE_ISECT   | Faces intersect.
+//   ERROR   | Magenta  | HOLE_EDGE    | Edge bounds Hole.
 //   .
 //   Still to implement:
 //   - Overlapping coplanar faces.
@@ -649,7 +746,7 @@ function vnf_bend(vnf,r,d,axis="Z") =
 //       [a, b, e], [a, c, b], [a, d, c], [a, e, d], [b, c, d, e]
 //   ]);
 //   vnf_validate(vnf);
-// Example: OVRPOP_EDGE Errors; More Than Two Faces Attached to the Same Edge.  This confuses CGAL, and can lead to failed renders.
+// Example: MULTCONN Errors; More Than Two Faces Attached to the Same Edge.  This confuses CGAL, and can lead to failed renders.
 //   vnf = vnf_triangulate(linear_sweep(union(square(50), square(50,anchor=BACK+RIGHT)), height=50));
 //   vnf_validate(vnf);
 // Example: REVERSAL Errors; Faces Reversed Across Edge
@@ -684,7 +781,7 @@ function vnf_bend(vnf,r,d,axis="Z") =
 //       move([75,35,30],p=vnf_triangulate(linear_sweep(square(100,center=true), height=100)))
 //   ]);
 //   vnf_validate(vnf,size=2,check_isects=true);
-// Example: HOLE_EDGE Errors; Edges Adjacent to Holes.  
+// Example: HOLE_EDGE Errors; Edges Adjacent to Holes.
 //   vnf = skin([
 //       path3d(regular_ngon(n=4, d=100),0),
 //       path3d(regular_ngon(n=5, d=100),100)
@@ -696,121 +793,181 @@ function vnf_validate(vnf, show_warns=true, check_isects=false) =
         vnf = vnf_compact(vnf),
         varr = vnf[0],
         faces = vnf[1],
+        lvarr = len(varr),
         edges = sort([
             for (face=faces, edge=pair(face,true))
             edge[0]<edge[1]? edge : [edge[1],edge[0]]
         ]),
+        dfaces = [
+            for (face=faces) let(
+                face=deduplicate_indexed(varr,face,closed=true)
+            ) if(len(face)>=3)
+            face
+        ],
+        face_areas = [
+            for (face = faces)
+            len(face) < 3? 0 :
+            polygon_area([for (k=face) varr[k]])
+        ],
         edgecnts = unique_count(edges),
         uniq_edges = edgecnts[0],
+        issues = []
+    )
+    let(
         big_faces = !show_warns? [] : [
             for (face = faces)
             if (len(face) > 3)
             _vnf_validate_err("BIG_FACE", [for (i=face) varr[i]])
         ],
         null_faces = !show_warns? [] : [
-            for (face = faces) let(
-                face = deduplicate(face,closed=true)
-            )
-            if (len(face)>=3) let(
-                faceverts = [for (k=face) varr[k]],
-                area = polygon_area(faceverts)
+            for (i = idx(faces)) let(
+                face = faces[i],
+                area = face_areas[i],
+                faceverts = [for (k=face) varr[k]]
             )
             if (is_num(area) && abs(area) < EPSILON)
             _vnf_validate_err("NULL_FACE", faceverts)
         ],
-        nonplanars = unique([
-            for (face = faces) let(
-                faceverts = [for (k=face) varr[k]],
-                area = polygon_area(faceverts)
-            )
-            if (is_num(area) && abs(area) > EPSILON)
-            if (!coplanar(faceverts))
-            _vnf_validate_err("NONPLANAR", faceverts)
-        ]),
-        overpop_edges = unique([
-            for (i=idx(uniq_edges))
+        issues = concat(big_faces, null_faces)
+    )
+    let(
+        bad_indices = [
+            for (face = faces, idx = face)
+            if (idx < 0 || idx >= lvarr)
+            _vnf_validate_err("BAD_INDEX", [idx])
+        ],
+        issues = concat(issues, bad_indices)
+    ) bad_indices? issues :
+    let(
+        repeated_faces = [
+            for (i=idx(dfaces), j=idx(dfaces))
+            if (i!=j) let(
+                face1 = dfaces[i],
+                face2 = dfaces[j]
+            ) if (min(face1) == min(face2)) let(
+                min1 = min_index(face1),
+                min2 = min_index(face2)
+            ) if (min1 == min2) let(
+                sface1 = list_rotate(face1,min1),
+                sface2 = list_rotate(face2,min2)
+            ) if (sface1 == sface2)
+            _vnf_validate_err("DUP_FACE", [for (i=sface1) varr[i]])
+        ],
+        issues = concat(issues, repeated_faces)
+    ) repeated_faces? issues :
+    let(
+        multconn_edges = unique([
+            for (i = idx(uniq_edges))
             if (edgecnts[1][i]>2)
-            _vnf_validate_err("OVRPOP_EDGE", [for (i=uniq_edges[i]) varr[i]])
+            _vnf_validate_err("MULTCONN", [for (i=uniq_edges[i]) varr[i]])
         ]),
+        issues = concat(issues, multconn_edges)
+    ) multconn_edges? issues :
+    let(
         reversals = unique([
-            for(i = idx(faces), j = idx(faces)) if(i != j)
-            if(len(deduplicate(faces[i],closed=true))>=3)
-            if(len(deduplicate(faces[j],closed=true))>=3)
+            for(i = idx(dfaces), j = idx(dfaces)) if(i != j)
             for(edge1 = pair(faces[i],true))
             for(edge2 = pair(faces[j],true))
             if(edge1 == edge2)  // Valid adjacent faces will never have the same vertex ordering.
-            if(_edge_not_reported(edge1, varr, overpop_edges))
+            if(_edge_not_reported(edge1, varr, multconn_edges))
             _vnf_validate_err("REVERSAL", [for (i=edge1) varr[i]])
         ]),
+        issues = concat(issues, reversals)
+    ) reversals? issues :
+    let(
         t_juncts = unique([
-            for (v=idx(varr), edge=uniq_edges)
-            if (v!=edge[0] && v!=edge[1]) let(
-                a = varr[edge[0]],
-                b = varr[v],
-                c = varr[edge[1]]
+            for (v=idx(varr), edge=uniq_edges) let(
+                ia = edge[0],
+                ib = v,
+                ic = edge[1]
             )
-            if (a != b && b != c && a != c) let(
+            if (ia!=ib && ib!=ic && ia!=ic) let(
+                a = varr[ia],
+                b = varr[ib],
+                c = varr[ic]
+            )
+            if (!approx(a,b) && !approx(b,c) && !approx(a,c)) let(
                 pt = segment_closest_point([a,c],b)
             )
-            if (pt == b)
+            if (approx(pt,b))
             _vnf_validate_err("T_JUNCTION", [b])
         ]),
+        issues = concat(issues, t_juncts)
+    ) t_juncts? issues :
+    let(
         isect_faces = !check_isects? [] : unique([
-            for (i = [0:1:len(faces)-2])
-            for (j = [i+1:1:len(faces)-1]) let(
+            for (i = [0:1:len(faces)-2]) let(
                 f1 = faces[i],
+                poly1   = select(varr, faces[i]),
+                plane1  = plane3pt(poly1[0], poly1[1], poly1[2]),
+                normal1 = [plane1[0], plane1[1], plane1[2]]
+            )
+            for (j = [i+1:1:len(faces)-1]) let(
                 f2 = faces[j],
+                poly2 = select(varr, f2),
+                val = poly2 * normal1
+            )
+            if( min(val)<=plane1[3] && max(val)>=plane1[3] ) let(
+                plane2  = plane_from_polygon(poly2),
+                normal2 = [plane2[0], plane2[1], plane2[2]],
+                val = poly1 * normal2
+            )
+            if( min(val)<=plane2[3] && max(val)>=plane2[3] ) let(
                 shared_edges = [
-                    for (edge1 = pair(f1,true), edge2 = pair(f2,true)) let(
-                        e1 = edge1[0]<edge1[1]? edge1 : [edge1[1],edge1[0]],
-                        e2 = edge2[0]<edge2[1]? edge2 : [edge2[1],edge2[0]]
-                    ) if (e1==e2) 1
+                    for (edge1 = pair(f1, true), edge2 = pair(f2, true))
+                    if (edge1 == [edge2[1], edge2[0]]) 1
                 ]
             )
             if (!shared_edges) let(
-                plane1 = plane3pt_indexed(varr, f1[0], f1[1], f1[2]),
-                plane2 = plane3pt_indexed(varr, f2[0], f2[1], f2[2]),
                 line = plane_intersection(plane1, plane2)
             )
             if (!is_undef(line)) let(
-                poly1 = select(varr,f1),
-                isects = polygon_line_intersection(poly1,line)
+                isects = polygon_line_intersection(poly1, line)
             )
             if (!is_undef(isects))
-            for (isect=isects)
-            if (len(isect)>1) let(
-                poly2 = select(varr,f2),
-                isects2 = polygon_line_intersection(poly2,isect,bounded=true)
+            for (isect = isects)
+            if (len(isect) > 1) let(
+                isects2 = polygon_line_intersection(poly2, isect, bounded=true)
             )
             if (!is_undef(isects2))
-            for (seg=isects2)
+            for (seg = isects2)
             if (seg[0] != seg[1])
             _vnf_validate_err("FACE_ISECT", seg)
         ]),
+        issues = concat(issues, isect_faces)
+    ) isect_faces? issues :
+    let(
         hole_edges = unique([
             for (i=idx(uniq_edges))
             if (edgecnts[1][i]<2)
             if (_pts_not_reported(uniq_edges[i], varr, t_juncts))
             if (_pts_not_reported(uniq_edges[i], varr, isect_faces))
             _vnf_validate_err("HOLE_EDGE", [for (i=uniq_edges[i]) varr[i]])
-        ])
-    ) concat(
-        big_faces,
-        null_faces,
-        nonplanars,
-        overpop_edges,
-        reversals,
-        t_juncts,
-        isect_faces,
-        hole_edges
-    );
+        ]),
+        issues = concat(issues, hole_edges)
+    ) hole_edges? issues :
+    let(
+        nonplanars = unique([
+            for (i = idx(faces)) let(
+                face = faces[i],
+                area = face_areas[i],
+                faceverts = [for (k=face) varr[k]]
+            )
+            if (is_num(area) && abs(area) > EPSILON)
+            if (!coplanar(faceverts))
+            _vnf_validate_err("NONPLANAR", faceverts)
+        ]),
+        issues = concat(issues, nonplanars)
+    ) issues;
 
 
 _vnf_validate_errs = [
     ["BIG_FACE",    "WARNING", "cyan",    "Face has more than 3 vertices, and may confuse CGAL"],
     ["NULL_FACE",   "WARNING", "blue",    "Face has zero area."],
+    ["BAD_INDEX",   "ERROR",   "cyan",    "Invalid face vertex index."],
     ["NONPLANAR",   "ERROR",   "yellow",  "Face vertices are not coplanar"],
-    ["OVRPOP_EDGE", "ERROR",   "orange",  "Too many faces attached at Edge"],
+    ["DUP_FACE",    "ERROR",   "brown",   "Multiple instances of the same face."],
+    ["MULTCONN",    "ERROR",   "orange",  "Multiply Connected Geometry. Too many faces attached at Edge"],
     ["REVERSAL",    "ERROR",   "violet",  "Faces Reverse Across Edge"],
     ["T_JUNCTION",  "ERROR",   "magenta", "Vertex is mid-edge on another Face"],
     ["FACE_ISECT",  "ERROR",   "brown",   "Faces intersect"],
@@ -854,13 +1011,15 @@ module vnf_validate(vnf, size=1, show_warns=true, check_isects=false) {
         pts = fault[4];
         echo(str(typ, " ", err, " (", clr ,"): ", msg, " at ", pts));
         color(clr) {
-            if (len(pts)==2) {
-                stroke(pts, width=size, closed=true, endcaps="butt", hull=false, $fn=8);
-            } else if (len(pts)>2) {
-                stroke(pts, width=size, closed=true, hull=false, $fn=8);
-                polyhedron(pts,[[for (i=idx(pts)) i]]);
-            } else {
-                move_copies(pts) sphere(d=size*3, $fn=18);
+            if (is_vector(pts[0])) {
+                if (len(pts)==2) {
+                    stroke(pts, width=size, closed=true, endcaps="butt", hull=false, $fn=8);
+                } else if (len(pts)>2) {
+                    stroke(pts, width=size, closed=true, hull=false, $fn=8);
+                    polyhedron(pts,[[for (i=idx(pts)) i]]);
+                } else {
+                    move_copies(pts) sphere(d=size*3, $fn=18);
+                }
             }
         }
     }
@@ -872,139 +1031,111 @@ module vnf_validate(vnf, size=1, show_warns=true, check_isects=false) {
 
 // Function: vnf_halfspace()
 // Usage:
-//   vnf_halfspace([a,b,c,d], vnf)
+//   newvnf = vnf_halfspace(plane, vnf, <closed>);
 // Description:
-//   returns the intersection of the VNF with the given half-space.
+//   Returns the intersection of the vnf with a half space.  The half space is defined by
+//   plane = [A,B,C,D], taking the side where the normal [A,B,C] points: Ax+By+Cz≥D.
+//   If closed is set to false then the cut face is not included in the vnf.  This could
+//   allow further extension of the vnf by merging with other vnfs.  
 // Arguments:
-//   halfspace = half-space to intersect with, given as the four coefficients of the affine inequation a\*x+b\*y+c\*z≥ d.
+//   plane = plane defining the boundary of the half space
+//   vnf = vnf to cut
+//   closed = if false do not return include cut face(s).  Default: true
+// Example:
+//   vnf = cube(10,center=true);
+//   cutvnf = vnf_halfspace([-1,1,-1,0], vnf);
+//   vnf_polyhedron(cutvnf);
+// Example:  Cut face has 2 components
+//   vnf = path_sweep(circle(r=4, $fn=16),
+//                    circle(r=20, $fn=64),closed=true);
+//   cutvnf = vnf_halfspace([-1,1,-4,0], vnf);
+//   vnf_polyhedron(cutvnf);
+// Example: Cut face is not simply connected
+//   vnf = path_sweep(circle(r=4, $fn=16),
+//                    circle(r=20, $fn=64),closed=true);
+//   cutvnf = vnf_halfspace([0,0.7,-4,0], vnf);
+//   vnf_polyhedron(cutvnf);
+// Example: Cut object has multiple components
+//   function knot(a,b,t) =   // rolling knot 
+//        [ a * cos (3 * t) / (1 - b* sin (2 *t)), 
+//          a * sin( 3 * t) / (1 - b* sin (2 *t)), 
+//        1.8 * b * cos (2 * t) /(1 - b* sin (2 *t))]; 
+//   a = 0.8; b = sqrt (1 - a * a); 
+//   ksteps = 400;
+//   knot_path = [for (i=[0:ksteps-1]) 50 * knot(a,b,(i/ksteps)*360)];
+//   ushape = [[-10, 0],[-10, 10],[ -7, 10],[ -7, 2],[  7, 2],[  7, 7],[ 10, 7],[ 10, 0]];
+//   knot=path_sweep(ushape, knot_path, closed=true, method="incremental");
+//   cut_knot = vnf_halfspace([1,0,0,0], knot);
+//   vnf_polyhedron(cut_knot);
+function vnf_halfspace(plane, vnf, closed=true) =
+    let(
+         inside = [for(x=vnf[0]) plane*[each x,-1] >= 0 ? 1 : 0],
+         vertexmap = [0,each cumsum(inside)],
+         faces_edges_vertices = _vnfcut(plane, vnf[0],vertexmap,inside, vnf[1], last(vertexmap)),
+         newvert = concat(bselect(vnf[0],inside), faces_edges_vertices[2])
+    )
+    closed==false ? [newvert, faces_edges_vertices[0]] :
+    let(
+        allpaths = _assemble_paths(newvert, faces_edges_vertices[1]),
+        newpaths = [for(p=allpaths) if (len(p)>=3) p
+                                    else assert(approx(p[0],p[1]),"Orphan edge found when assembling cut edges.")
+           ]
+    )
+    len(newpaths)<=1 ? [newvert, concat(faces_edges_vertices[0], newpaths)] 
+    :
+      let(
+           faceregion = [for(p=newpaths) project_plane(select(newvert,p), plane)],
+           facevnf = region_faces(faceregion,reverse=true),
+           faceverts = lift_plane(facevnf[0], plane)
+      )
+      vnf_merge([[newvert, faces_edges_vertices[0]], [faceverts, facevnf[1]]]);
 
-function _vnf_halfspace_pts(halfspace, points, faces,
-  inside=undef, coords=[], map=[]) =
-/* Recursive function to compute the intersection of points (and edges,
- * but not faces) with with the half-space.
- * Parameters:
- * halfspace  a vector(4)
- * points     a list of points3d
- * faces      a list of indexes in points
- * inside     a vector{bool} determining which points belong to the
- *            half-space; if undef, it is initialized at first loop.
- * coords     the coordinates of the points in the intersection
- * map        the logical map (old point) → (new point(s)):
- *   if point i is kept, then map[i] = new-index-for-i;
- *   if point i is dropped, then map[i] = [[j1, k1], [j2, k2], …],
- *      where points j1,… are kept (old index)
- *      and k1,… are the matching intersections (new index).
- * Returns the triple [coords, map, inside].
- *
- */
-    let(i=len(map), n=len(coords)) // we are currently processing point i
-    // termination test:
-    i >= len(points) ? [ coords, map, inside ] :
-    let(inside = !is_undef(inside) ? inside :
-        [for(x=points) halfspace*concat(x,[-1]) >= 0],
-        pi = points[i])
-    // inside half-space: keep the point (and reindex)
-    inside[i] ? _vnf_halfspace_pts(halfspace, points, faces, inside,
-        concat(coords, [pi]), concat(map, [n]))
-    : // else: compute adjacent vertices (adj)
-    let(adj = unique([for(f=faces) let(m=len(f), j=search(i, f)[0])
-      each if(j!=undef) [f[(j+1)%m], f[(j+m-1)%m]] ]),
-    // filter those which lie in half-space:
-        adj2 = [for(x=adj) if(inside[x]) x],
-        zi = halfspace*concat(pi, [-1]))
-    _vnf_halfspace_pts(halfspace, points, faces, inside,
-        // new points: we append all these intersection points
-        concat(coords, [for(j=adj2) let(zj=halfspace*concat(points[j],[-1]))
-            (zi*points[j]-zj*pi)/(zi-zj)]),
-        // map: we add the info
-        concat(map, [[for(y=enumerate(adj2)) [y[1], n+y[0]]]]));
-function _vnf_halfspace_face(face, map, inside, i=0,
-    newface=[], newedge=[], exit) =
-/* Recursive function to intersect a face of the VNF with the half-plane.
- * Arguments:
- *   face: the list of points of the face (old indices).
- *   map: as produced by _vnf_halfspace_pts
- *   inside: vector{bool} containing half-space info
- *   i: index for iteration
- *   exit: boolean; is first point in newedge an exit or an entrance from
- *     half-space?
- *   newface: list of (new indexes of) points on the face
- *   newedge: list of new points on the plane (even number of points)
- *  Return value: [newface, new-edges], where new-edges is a list of
- *  pairs [entrance-node, exit-node] (new indices).
- */
-// termination condition:
-    (i >= len(face)) ? [ newface,
-    // if exit==true then we return newedge[1,0], newedge[3,2], ...
-    // otherwise newedge[0,1], newedge[2,3], ...;
-    // all edges are oriented (entrance->exit), so that by following the
-    // arrows we obtain a correctly-oriented face:
-    let(k = exit ? 0 : 1)
-    [for(i=[0:2:len(newedge)-2]) [newedge[i+k], newedge[i+1-k]]] ]
-    : // recursion case: p is current point on face, q is next point
-    let(p = face[i], q = face[(i+1)%len(face)],
-        // if p is inside half-plane, keep it in the new face:
-        newface0 = inside[p] ?  concat(newface, [map[p]]) : newface)
-        // if the current segment does not intersect, this is all:
-        inside[p] == inside[q] ? _vnf_halfspace_face(face, map, inside, i+1,
-            newface0, newedge, exit)
-        : // otherwise, we must add the intersection point:
-        // rename the two points p,q as inner and outer point:
-        let(in = inside[p] ? p : q, out = p+q-in,
-            inter=[for(a=map[out]) if(a[0]==in) a[1]][0])
-        _vnf_halfspace_face(face, map, inside, i+1,
-            concat(newface0, [inter]),
-            concat(newedge, [inter]),
-            is_undef(exit) ? inside[p] : exit);
-function _vnf_halfspace_path_search_edge(edge, paths, i=0, ret=[undef,undef]) =
-/* given an oriented edge [x,y] and a set of oriented paths,
- * returns the indices [i,j] of paths [before, after] given edge
- */
-    // termination condition
-    i >= len(paths) ? ret:
-    _vnf_halfspace_path_search_edge(edge, paths, i+1,
-       [last(paths[i]) == edge[0] ? i : ret[0],
-        paths[i][0] == edge[1] ? i : ret[1]]);
-function _vnf_halfspace_paths(edges, i=0, paths=[]) =
-/* given a set of oriented edges [x,y],
-   returns all paths [x,y,z,..] that may be formed from these edges.
-   A closed path will be returned with equal first and last point.
-   i: index of currently examined edge
- */
-    i >= len(edges) ? paths : // termination condition
-    let(e=edges[i], s = _vnf_halfspace_path_search_edge(e, paths))
-        _vnf_halfspace_paths(edges, i+1,
-        // we keep all paths untouched by e[i]
-        concat([for(i=[0:1:len(paths)-1]) if(i!= s[0] && i != s[1]) paths[i]],
-        is_undef(s[0])? (
-            // fresh e: create a new path
-            is_undef(s[1]) ? [e] :
-            // e attaches to beginning of previous path
-            [concat([e[0]], paths[s[1]])]
-        ) :// edge attaches to end of previous path
-        is_undef(s[1]) ? [concat(paths[s[0]], [e[1]])] :
-        // edge merges two paths
-        s[0] != s[1] ? [concat(paths[s[0]], paths[s[1]])] :
-        // edge closes a loop
-        [concat(paths[s[0]], [e[1]])]));
-function vnf_halfspace(_arg1=_undef, _arg2=_undef,
-    halfspace=_undef, vnf=_undef) =
-    // here is where we wish that OpenSCAD had array lvalues...
-    let(args=get_named_args([_arg1, _arg2], [[halfspace],[vnf]]),
-        halfspace=args[0], vnf=args[1])
-    assert(is_vector(halfspace, 4),
-        "half-space must be passed as a length 4 affine form")
-    assert(is_vnf(vnf), "must pass a vnf")
-        // read points
-    let(tmp1=_vnf_halfspace_pts(halfspace, vnf[0], vnf[1]),
-        coords=tmp1[0], map=tmp1[1], inside=tmp1[2],
-        // cut faces and generate edges
-        tmp2= [for(f=vnf[1]) _vnf_halfspace_face(f, map, inside)],
-        newfaces=[for(x=tmp2) if(x[0]!=[]) x[0]],
-        newedges=[for(x=tmp2) each x[1]],
-        // generate new faces
-        paths=_vnf_halfspace_paths(newedges),
-        loops=[for(p=paths) if(p[0] == last(p)) p])
-    [coords, concat(newfaces, loops)];
+
+function _assemble_paths(vertices, edges, paths=[],i=0) =
+     i==len(edges) ? paths :
+     norm(vertices[edges[i][0]]-vertices[edges[i][1]])<EPSILON ? echo(degen=i)_assemble_paths(vertices,edges,paths,i+1) :
+     let(    // Find paths that connects on left side and right side of the edges (if one exists)
+         left = [for(j=idx(paths)) if (approx(vertices[last(paths[j])],vertices[edges[i][0]])) j],
+         right = [for(j=idx(paths)) if (approx(vertices[edges[i][1]],vertices[paths[j][0]])) j]
+     )
+     assert(len(left)<=1 && len(right)<=1)
+     let(              
+          keep_path = list_remove(paths,concat(left,right)),
+          update_path = left==[] && right==[] ? edges[i] 
+                      : left==[] ? concat([edges[i][0]],paths[right[0]])
+                      : right==[] ? concat(paths[left[0]],[edges[i][1]])
+                      : left != right ? concat(paths[left[0]], paths[right[0]])
+                      : paths[left[0]]
+     )
+     _assemble_paths(vertices, edges, concat(keep_path, [update_path]), i+1);
+
+
+function _vnfcut(plane, vertices, vertexmap, inside, faces, vertcount, newfaces=[], newedges=[], newvertices=[], i=0) =
+   i==len(faces) ? [newfaces, newedges, newvertices] :
+   let(
+        pts_inside = select(inside,faces[i])
+   )
+   all(pts_inside) ? _vnfcut(plane, vertices, vertexmap, inside, faces, vertcount,
+                             concat(newfaces, [select(vertexmap,faces[i])]), newedges, newvertices, i+1):
+   !any(pts_inside) ? _vnfcut(plane, vertices, vertexmap,inside, faces, vertcount, newfaces, newedges, newvertices, i+1):
+   let(
+        first = search([[1,0]],pair(pts_inside,wrap=true),0)[0],
+        second = search([[0,1]],pair(pts_inside,wrap=true),0)[0]
+   )
+   assert(len(first)==1 && len(second)==1, "Found concave face in VNF.  Run vnf_triangulate first to ensure convex faces.")
+   let(
+        newface = [each select(vertexmap,select(faces[i],second[0]+1,first[0])),vertcount, vertcount+1],
+        newvert = [plane_line_intersection(plane, select(vertices,select(faces[i],first[0],first[0]+1)),eps=0),
+                   plane_line_intersection(plane, select(vertices,select(faces[i],second[0],second[0]+1)),eps=0)]
+   )
+   true //!approx(newvert[0],newvert[1])
+       ? _vnfcut(plane, vertices, vertexmap, inside, faces, vertcount+2,
+                 concat(newfaces, [newface]), concat(newedges,[[vertcount+1,vertcount]]),concat(newvertices,newvert),i+1)
+   :len(newface)>3
+       ? _vnfcut(plane, vertices, vertexmap, inside, faces, vertcount+1,
+                 concat(newfaces, [list_head(newface)]), newedges,concat(newvertices,[newvert[0]]),i+1)
+   :
+   _vnfcut(plane, vertices, vertexmap, inside, faces, vertcount,newfaces, newedges, newvert, i+1);
+ 
 
 // vim: expandtab tabstop=4 shiftwidth=4 softtabstop=4 nowrap

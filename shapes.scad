@@ -1339,7 +1339,7 @@ module spheroid(r, style="aligned", d, circum=false, anchor=CENTER, spin=0, orie
             path = [
                 let(a = merids[0]) [0, sin(a)],
                 for (a=merids) [cos(a), sin(a)],
-                let(a = select(merids,-1)) [0, sin(a)]
+                let(a = last(merids)) [0, sin(a)]
             ];
             scale(r) rotate(180) rotate_extrude(convexity=2,$fn=sides) polygon(path);
         } else {
@@ -1441,7 +1441,7 @@ function spheroid(r, style="aligned", d, circum=false, anchor=CENTER, spin=0, or
                 1,
             ],
             offs = cumsum(meridians),
-            pc = select(offs,-1)-1,
+            pc = last(offs)-1,
             os = octa_steps * 2
         ) [
             for (i=[0:1:3]) [0, 1+(i+1)%4, 1+i],
@@ -1527,9 +1527,10 @@ module teardrop(h, r, ang=45, cap_h, d, l, anchor=CENTER, spin=0, orient=UP)
 {
     r = get_radius(r=r, d=d, dflt=1);
     l = first_defined([l, h, 1]);
-    maxd = 3*r/tan(ang);
+    tip_y = adj_ang_to_hyp(r, 90-ang);
+    cap_h = min(default(cap_h,tip_y), tip_y);
     anchors = [
-        ["cap", [0,0,default(cap_h,maxd)], UP, 0]
+        ["cap", [0,0,cap_h], UP, 0]
     ];
     attachable(anchor,spin,orient, r=r, l=l, axis=BACK, anchors=anchors) {
         rot(from=UP,to=FWD) {
@@ -1578,15 +1579,16 @@ module teardrop(h, r, ang=45, cap_h, d, l, anchor=CENTER, spin=0, orient=UP)
 module onion(r, ang=45, cap_h, d, anchor=CENTER, spin=0, orient=UP)
 {
     r = get_radius(r=r, d=d, dflt=1);
-    maxd = 3*r/tan(ang);
+    tip_y = adj_ang_to_hyp(r, 90-ang);
+    cap_h = min(default(cap_h,tip_y), tip_y);
     anchors = [
-        ["cap", [0,0,default(cap_h,maxd)], UP, 0]
+        ["cap", [0,0,cap_h], UP, 0]
     ];
     attachable(anchor,spin,orient, r=r, anchors=anchors) {
         rotate_extrude(convexity=2) {
             difference() {
                 teardrop2d(r=r, ang=ang, cap_h=cap_h);
-                left(r) square(size=[2*r,maxd], center=true);
+                left(r) square(size=[2*r,2*max(cap_h,r)+1], center=true);
             }
         }
         children();

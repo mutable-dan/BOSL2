@@ -329,16 +329,16 @@ function up(z=0, p) = move([0,0,z],p=p);
 //   rot([X,Y,Z], <cp>, <reverse>) {...}
 //   rot(a, v, <cp>, <reverse>) {...}
 //   rot(from, to, <a>, <reverse>) {...}
-// Usage: Get Transformation Matrix
-//   pts = rot(a, <cp=>, <reverse=>, <planar=>);
-//   pts = rot([X,Y,Z], <cp=>, <reverse=>, <planar=>);
-//   pts = rot(a, v, <cp=>, <reverse=>, <planar=>);
-//   pts = rot(from=, to=, <a=>, <reverse=>, <planar=>);
-// Usage: As a Function
+// Usage: As a Function to transform data in `p`
 //   pts = rot(a, p=, <cp=>, <reverse=>);
 //   pts = rot([X,Y,Z], p=, <cp=>, <reverse=>);
 //   pts = rot(a, v, p=, <cp=>, <reverse=>);
 //   pts = rot(<a>, from=, to=, p=, <reverse=>);
+// Usage: As a Function to return a transform matrix
+//   M = rot(a, <cp=>, <reverse=>, <planar=>);
+//   M = rot([X,Y,Z], <cp=>, <reverse=>, <planar=>);
+//   M = rot(a, v, <cp=>, <reverse=>, <planar=>);
+//   M = rot(from=, to=, <a=>, <reverse=>, <planar=>);
 //
 // Topics: Affine, Matrices, Transforms, Rotation
 // See Also: xrot(), yrot(), zrot(), affine2d_zrot(), affine3d_xrot(), affine3d_yrot(), affine3d_zrot(), affine3d_rot_by_axis(), affine3d_rot_from_to()
@@ -349,21 +349,22 @@ function up(z=0, p) = move([0,0,z],p=p);
 //   * `rot(30)` or `rot(a=30)` rotates 30 degrees around the Z axis.
 //   * `rot([20,30,40])` or `rot(a=[20,30,40])` rotates 20 degrees around the X axis, then 30 degrees around the Y axis, then 40 degrees around the Z axis.
 //   * `rot(30, [1,1,0])` or `rot(a=30, v=[1,1,0])` rotates 30 degrees around the axis vector `[1,1,0]`.
-//   * `rot(from=[0,0,1], to=[1,0,0])` rotates the top towards the right, similar to `rot(a=90,v=[0,1,0]`.
-//   * `rot(from=[0,0,1], to=[1,1,0], a=45)` rotates 45 degrees around the Z axis, then rotates the top towards the back-right.  Similar to `rot(a=90,v=[-1,1,0])`
-//   If the `cp` centerpoint argument is given, then rotations are performed around that centerpoint.
-//   If the `reverse` argument is true, then the rotations performed will be exactly reversed.
+//   * `rot(from=[0,0,1], to=[1,0,0])` rotates the `from` vector to line up with the `to` vector, in this case the top to the right and hence equivalent to `rot(a=90,v=[0,1,0]`.
+//   * `rot(from=[0,1,1], to=[1,1,0], a=45)` rotates 45 degrees around the `from` vector ([0,1,1]) and then rotates the `from` vector to align with the `to` vector.  Equivalent to `rot(from=[0,1,1],to=[1,1,0]) rot(a=45,v=[0,1,1])`.  You can also regard `a` as as post-rotation around the `to` vector.  For this form, `a` must be a scalar.  
+//   * If the `cp` centerpoint argument is given, then rotations are performed around that centerpoint.  So `rot(args...,cp=[1,2,3])` is equivalent to `move(-[1,2,3])rot(args...)move([1,2,3])`.
+//   * If the `reverse` argument is true, then the rotations performed will be exactly reversed.
+//   .
 //   The behavior and return value varies depending on how `rot()` is called:
 //   * Called as a module, rotates all children.
 //   * Called as a function with a `p` argument containing a point, returns the rotated point.
 //   * Called as a function with a `p` argument containing a list of points, returns the list of rotated points.
 //   * Called as a function with a [bezier patch](beziers.scad) in the `p` argument, returns the rotated patch.
 //   * Called as a function with a [VNF structure](vnf.scad) in the `p` argument, returns the rotated VNF.
-//   * Called as a function without a `p` argument, and `planar` is true, returns the affine2d rotational matrix.  Requires that `a` is a finite scalar.
+//   * Called as a function without a `p` argument, and `planar` is true, returns the affine2d rotational matrix.  The angle `a` must be a scalar. 
 //   * Called as a function without a `p` argument, and `planar` is false, returns the affine3d rotational matrix.
 //
 // Arguments:
-//   a = Scalar angle or vector of XYZ rotation angles to rotate by, in degrees.  If `planar` is true and `p` is not given, then `a` must be a finite scalar.  Default: `0`
+//   a = Scalar angle or vector of XYZ rotation angles to rotate by, in degrees.  If `planar` is true or if `p` holds 2d data, or if you use the `from` and `to` arguments then `a` must be a scalar.  Default: `0`
 //   v = vector for the axis of rotation.  Default: [0,0,1] or UP
 //   ---
 //   cp = centerpoint to rotate around. Default: [0,0,0]
@@ -371,7 +372,7 @@ function up(z=0, p) = move([0,0,z],p=p);
 //   to = Target vector for vector-based rotations.
 //   reverse = If true, exactly reverses the rotation, including axis rotation ordering.  Default: false
 //   planar = If called as a function, this specifies if you want to work with 2D points.
-//   p = If called as a function, this contains a point or list of points to rotate.
+//   p = If called as a function, this contains data to rotate: a point, list of points, bezier patch or VNF.
 //
 // Example:
 //   #cube([2,4,9]);
@@ -424,7 +425,7 @@ function rot(a=0, v, cp, from, to, reverse=false, planar=false, p, _m) =
             cp = is_undef(cp)? undef : point3d(cp),
             m1 = !is_undef(from)? (
                     assert(is_num(a))
-                    affine3d_rot_from_to(from,to) * affine3d_zrot(a)
+                    affine3d_rot_from_to(from,to) * affine3d_rot_by_axis(from,a)
                 ) :
                 !is_undef(v)? assert(is_num(a)) affine3d_rot_by_axis(v,a) :
                 is_num(a)? affine3d_zrot(a) :
@@ -452,9 +453,9 @@ function rot(a=0, v, cp, from, to, reverse=false, planar=false, p, _m) =
 //
 // Usage: As Module
 //   xrot(a, <cp=>) ...
-// Usage: Rotate Points
+// Usage: As a function to rotate points
 //   rotated = xrot(a, p, <cp=>);
-// Usage: Get Rotation Matrix
+// Usage: As a function to return rotation matrix
 //   mat = xrot(a, <cp=>);
 //
 // Topics: Affine, Matrices, Transforms, Rotation
@@ -472,7 +473,7 @@ function rot(a=0, v, cp, from, to, reverse=false, planar=false, p, _m) =
 //
 // Arguments:
 //   a = angle to rotate by in degrees.
-//   p = If called as a function, this contains a point or list of points to rotate.
+//   p = If called as a function, this contains data to rotate: a point, list of points, bezier patch or VNF.
 //   ---
 //   cp = centerpoint to rotate around. Default: [0,0,0]
 //
@@ -518,7 +519,7 @@ function xrot(a=0, p, cp) = rot([a,0,0], cp=cp, p=p);
 //
 // Arguments:
 //   a = angle to rotate by in degrees.
-//   p = If called as a function, this contains a point or list of points to rotate.
+//   p = If called as a function, this contains data to rotate: a point, list of points, bezier patch or VNF.
 //   ---
 //   cp = centerpoint to rotate around. Default: [0,0,0]
 //
@@ -544,9 +545,9 @@ function yrot(a=0, p, cp) = rot([0,a,0], cp=cp, p=p);
 //
 // Usage: As Module
 //   zrot(a, <cp=>) ...
-// Usage: Rotate Points
+// Usage: As Function to rotate points
 //   rotated = zrot(a, p, <cp=>);
-// Usage: Get Rotation Matrix
+// Usage: As Function to return rotation matrix
 //   mat = zrot(a, <cp=>);
 //
 // Topics: Affine, Matrices, Transforms, Rotation
@@ -564,7 +565,7 @@ function yrot(a=0, p, cp) = rot([0,a,0], cp=cp, p=p);
 //
 // Arguments:
 //   a = angle to rotate by in degrees.
-//   p = If called as a function, this contains a point or list of points to rotate.
+//   p = If called as a function, this contains data to rotate: a point, list of points, bezier patch or VNF.
 //   ---
 //   cp = centerpoint to rotate around. Default: [0,0,0]
 //
@@ -590,9 +591,9 @@ function zrot(a=0, p, cp) = rot(a, cp=cp, p=p);
 //
 // Usage: As Module
 //   xyrot(a, <cp=>) ...
-// Usage: Rotate Points
+// Usage: As a Function to rotate points
 //   rotated = xyrot(a, p, <cp=>);
-// Usage: Get Rotation Matrix
+// Usage: As a Function to get rotation matrix
 //   mat = xyrot(a, <cp=>);
 //
 // Topics: Affine, Matrices, Transforms, Rotation
@@ -609,7 +610,7 @@ function zrot(a=0, p, cp) = rot(a, cp=cp, p=p);
 //
 // Arguments:
 //   a = angle to rotate by in degrees.
-//   p = If called as a function, this contains a point or list of points to rotate.
+//   p = If called as a function, this contains data to rotate: a point, list of points, bezier patch or VNF.
 //   ---
 //   cp = centerpoint to rotate around. Default: [0,0,0]
 //
@@ -634,9 +635,9 @@ function xyrot(a=0, p, cp) = rot(a=a, v=[1,1,0], cp=cp, p=p);
 //
 // Usage: As Module
 //   xzrot(a, <cp=>) ...
-// Usage: Rotate Points
+// Usage: As Function to rotate points
 //   rotated = xzrot(a, p, <cp=>);
-// Usage: Get Rotation Matrix
+// Usage: As Function to return rotation matrix
 //   mat = xzrot(a, <cp=>);
 //
 // Topics: Affine, Matrices, Transforms, Rotation
@@ -653,7 +654,7 @@ function xyrot(a=0, p, cp) = rot(a=a, v=[1,1,0], cp=cp, p=p);
 //
 // Arguments:
 //   a = angle to rotate by in degrees.
-//   p = If called as a function, this contains a point or list of points to rotate.
+//   p = If called as a function, this contains data to rotate: a point, list of points, bezier patch or VNF.
 //   ---
 //   cp = centerpoint to rotate around. Default: [0,0,0]
 //
@@ -678,9 +679,9 @@ function xzrot(a=0, p, cp) = rot(a=a, v=[1,0,1], cp=cp, p=p);
 //
 // Usage: As Module
 //   yzrot(a, <cp=>) ...
-// Usage: Rotate Points
+// Usage: As Function to rotate points
 //   rotated = yzrot(a, p, <cp=>);
-// Usage: Get Rotation Matrix
+// Usage: As Function to return rotation matrix
 //   mat = yzrot(a, <cp=>);
 //
 // Topics: Affine, Matrices, Transforms, Rotation
@@ -697,7 +698,7 @@ function xzrot(a=0, p, cp) = rot(a=a, v=[1,0,1], cp=cp, p=p);
 //
 // Arguments:
 //   a = angle to rotate by in degrees.
-//   p = If called as a function, this contains a point or list of points to rotate.
+//   p = If called as a function, this contains data to rotate: a point, list of points, bezier patch or VNF.
 //   ---
 //   cp = centerpoint to rotate around. Default: [0,0,0]
 //
@@ -722,9 +723,9 @@ function yzrot(a=0, p, cp) = rot(a=a, v=[0,1,1], cp=cp, p=p);
 //
 // Usage: As Module
 //   xyzrot(a, <cp=>) ...
-// Usage: Rotate Points
+// Usage: As Function to rotate points
 //   rotated = xyzrot(a, p, <cp=>);
-// Usage: Get Rotation Matrix
+// Usage: As Function to return rotation matrix
 //   mat = xyzrot(a, <cp=>);
 //
 // Topics: Affine, Matrices, Transforms, Rotation
@@ -741,7 +742,7 @@ function yzrot(a=0, p, cp) = rot(a=a, v=[0,1,1], cp=cp, p=p);
 //
 // Arguments:
 //   a = angle to rotate by in degrees.
-//   p = If called as a function, this contains a point or list of points to rotate.
+//   p = If called as a function, this contains data to rotate: a point, list of points, bezier patch or VNF.
 //   ---
 //   cp = centerpoint to rotate around. Default: [0,0,0]
 //

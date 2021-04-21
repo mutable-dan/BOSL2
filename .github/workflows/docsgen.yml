@@ -28,7 +28,7 @@ jobs:
 
     - name: Install OpenSCAD
       run: |
-        curl -L -o OpenSCAD.dmg https://files.openscad.org/OpenSCAD-2021.01.dmg
+        curl -L -o OpenSCAD.dmg https://files.openscad.org/snapshots/OpenSCAD-2021.03.24.dmg
         hdiutil attach OpenSCAD.dmg
         cp -a /Volumes/OpenSCAD/OpenSCAD.app /Applications/
 
@@ -36,7 +36,8 @@ jobs:
       run: |
         cd $GITHUB_WORKSPACE
         export OPENSCADPATH=$(dirname $GITHUB_WORKSPACE)
-        openscad-docsgen -m -i -t -c *.scad
+        echo "::add-matcher::.github/openscad_docsgen.json"
+        openscad-docsgen -m -i -t -c -I *.scad
         cd BOSL2.wiki
         git config user.name github-actions
         git config user.email github-actions@github.com

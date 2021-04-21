@@ -174,6 +174,31 @@ function lerp(a,b,u) =
     [for (v = u) (1-v)*a + v*b ];
 
 
+// Function: lerpn()
+// Usage:
+//   x = lerpn(a, b, n);
+//   x = lerpn(a, b, n, <endpoint>);
+// Description:
+//   Returns exactly `n` values, linearly interpolated between `a` and `b`.
+//   If `endpoint` is true, then the last value will exactly equal `b`.
+//   If `endpoint` is false, then the last value will about `a+(b-a)*(1-1/n)`.
+// Arguments:
+//   a = First value or vector.
+//   b = Second value or vector.
+//   n = The number of values to return.
+//   endpoint = If true, the last value will be exactly `b`.  If false, the last value will be one step less.
+// Examples:
+//   l = lerpn(-4,4,9);        // Returns: [-4,-3,-2,-1,0,1,2,3,4]
+//   l = lerpn(-4,4,8,false);  // Returns: [-4,-3,-2,-1,0,1,2,3]
+//   l = lerpn(0,1,6);         // Returns: [0, 0.2, 0.4, 0.6, 0.8, 1]
+//   l = lerpn(0,1,5,false);   // Returns: [0, 0.2, 0.4, 0.6, 0.8]
+function lerpn(a,b,n,endpoint=true) =
+    assert(same_shape(a,b), "Bad or inconsistent inputs to lerp")
+    assert(is_int(n))
+    assert(is_bool(endpoint))
+    let( d = n - (endpoint? 1 : 0) )
+    [for (i=[0:1:n-1]) let(u=i/d) (1-u)*a + u*b];
+
 
 // Section: Undef Safe Math
 
@@ -434,32 +459,6 @@ function modang(x) =
     let(xx = posmod(x,360)) xx<180? xx : xx-360;
 
 
-// Function: modrange()
-// Usage:
-//   modrange(x, y, m, <step>)
-// Description:
-//   Returns a normalized list of numbers from `x` to `y`, by `step`, modulo `m`.  Wraps if `x` > `y`.
-// Arguments:
-//   x = The start value to constrain.
-//   y = The end value to constrain.
-//   m = Modulo value.
-//   step = Step by this amount.
-// Examples:
-//   modrange(90,270,360, step=45);   // Returns: [90,135,180,225,270]
-//   modrange(270,90,360, step=45);   // Returns: [270,315,0,45,90]
-//   modrange(90,270,360, step=-45);  // Returns: [90,45,0,315,270]
-//   modrange(270,90,360, step=-45);  // Returns: [270,225,180,135,90]
-function modrange(x, y, m, step=1) =
-    assert( is_finite(x+y+step+m) && !approx(m,0), "Input must be finite numbers and the module value cannot be zero." )
-    let(
-        a = posmod(x, m),
-        b = posmod(y, m),
-        c = step>0? (a>b? b+m : b) 
-            : (a<b? b-m : b)
-    ) [for (i=[a:step:c]) (i%m+m)%m ];
-
-
-
 // Section: Random Number Generation
 
 // Function: rand_int()
@@ -495,7 +494,7 @@ function rand_int(minval, maxval, N, seed=undef) =
 function gaussian_rands(mean, stddev, N=1, seed=undef) =
     assert( is_finite(mean+stddev+N) && (is_undef(seed) || is_finite(seed) ), "Input must be finite numbers.")
     let(nums = is_undef(seed)? rands(0,1,N*2) : rands(0,1,N*2,seed))
-    [for (i = list_range(N)) mean + stddev*sqrt(-2*ln(nums[i*2]))*cos(360*nums[i*2+1])];
+    [for (i = count(N,0,2)) mean + stddev*sqrt(-2*ln(nums[i]))*cos(360*nums[i+1])];
 
 
 // Function: log_rands()
@@ -544,9 +543,8 @@ function _lcm(a,b) =
 
 // Computes lcm for a list of values
 function _lcmlist(a) =
-    len(a)==1 
-    ?   a[0] 
-    :   _lcmlist(concat(slice(a,0,len(a)-2),[lcm(a[len(a)-2],a[len(a)-1])]));
+    len(a)==1 ? a[0] :
+    _lcmlist(concat(lcm(a[0],a[1]),list_tail(a,2)));
 
 
 // Function: lcm()
@@ -585,10 +583,10 @@ function lcm(a,b=[]) =
 function sum(v, dflt=0) =
     v==[]? dflt :
     assert(is_consistent(v), "Input to sum is non-numeric or inconsistent")
+    is_vector(v) || is_matrix(v) ? [for(i=v) 1]*v :
     _sum(v,v[0]*0);
 
 function _sum(v,_total,_i=0) = _i>=len(v) ? _total : _sum(v,_total+v[_i], _i+1);
-
 
 // Function: cumsum()
 // Usage:
@@ -613,7 +611,7 @@ function _cumsum(v,_i=0,_acc=[]) =
         v, _i+1,
         concat(
             _acc,
-            [_i==0 ? v[_i] : select(_acc,-1)+v[_i]]
+            [_i==0 ? v[_i] : last(_acc) + v[_i]]
         )
     );
 
@@ -906,7 +904,7 @@ function _back_substitute(R, b, x=[]) =
     : let(
           newvalue = len(x)==0
             ? b[ind]/R[ind][ind]
-            : (b[ind]-select(R[ind],ind+1,-1) * x)/R[ind][ind]
+            : (b[ind]-list_tail(R[ind],ind+1) * x)/R[ind][ind]
       )
       _back_substitute(R, b, concat([newvalue],x));
 
@@ -987,9 +985,8 @@ function determinant(M) =
 function is_matrix(A,m,n,square=false) =
    is_list(A)
    && (( is_undef(m) && len(A) ) || len(A)==m)
-   && is_list(A[0])
-   && (( is_undef(n) && len(A[0]) ) || len(A[0])==n)
    && (!square || len(A) == len(A[0]))
+   && is_vector(A[0],n)
    && is_consistent(A);
 
 
@@ -1156,6 +1153,18 @@ function all_nonnegative(x) =
     false;
 
 
+// Function all_equal()
+// Usage:
+//   b = all_equal(vec,<eps>);
+// Description:
+//   Returns true if all of the entries in vec are equal to each other, or approximately equal to each other if eps is set.
+// Arguments:
+//   vec = vector to check
+//   eps = Set to tolerance for approximate equality.  Default: 0
+function all_equal(vec,eps=0) =
+   eps==0 ? [for(v=vec) if (v!=vec[0]) v] == []
+          : [for(v=vec) if (!approx(v,vec[0])) v] == [];
+
 // Function: approx()
 // Usage:
 //   b = approx(a,b,<eps>)
@@ -1216,72 +1225,85 @@ function compare_vals(a, b) =
 //   a = First list to compare.
 //   b = Second list to compare.
 function compare_lists(a, b) =
-    a==b? 0 
-    :   let(
-          cmps = [ for(i=[0:1:min(len(a),len(b))-1]) 
-                      let( cmp = compare_vals(a[i],b[i]) )
-                      if(cmp!=0) cmp 
-                 ]
-           ) 
-        cmps==[]? (len(a)-len(b)) : cmps[0];
+    a==b? 0 :
+    let(
+        cmps = [
+            for (i = [0:1:min(len(a),len(b))-1])
+            let( cmp = compare_vals(a[i],b[i]) )
+            if (cmp!=0) cmp
+        ]
+    )
+    cmps==[]? (len(a)-len(b)) : cmps[0];
 
 
 // Function: any()
 // Usage:
 //   b = any(l);
+//   b = any(l,func);
 // Description:
 //   Returns true if any item in list `l` evaluates as true.
-//   If `l` is a lists of lists, `any()` is applied recursively to each sublist.
 // Arguments:
 //   l = The list to test for true items.
+//   func = An optional function literal of signature (x), returning bool, to test each list item with.
 // Example:
 //   any([0,false,undef]);  // Returns false.
 //   any([1,false,undef]);  // Returns true.
 //   any([1,5,true]);       // Returns true.
-//   any([[0,0], [0,0]]);   // Returns false.
+//   any([[0,0], [0,0]]);   // Returns true.
 //   any([[0,0], [1,0]]);   // Returns true.
-function any(l) =
+function any(l, func) =
     assert(is_list(l), "The input is not a list." )
-    _any(l);
+    assert(func==undef || is_func(func))
+    is_func(func)
+      ? _any_func(l, func)
+      : _any_bool(l);
 
-function _any(l, i=0, succ=false) =
-    (i>=len(l) || succ)? succ :
-    _any(
-        l, i+1, 
-        succ = is_list(l[i]) ? _any(l[i]) : !(!l[i])
-    );
+function _any_func(l, func, i=0, out=false) =
+    i >= len(l) || out? out :
+    _any_func(l, func, i=i+1, out=out || func(l[i]));
+
+function _any_bool(l, i=0, out=false) =
+    i >= len(l) || out? out :
+    _any_bool(l, i=i+1, out=out || l[i]);
 
 
 // Function: all()
 // Usage:
 //   b = all(l);
+//   b = all(l,func);
 // Description:
-//   Returns true if all items in list `l` evaluate as true.
-//   If `l` is a lists of lists, `all()` is applied recursively to each sublist.
+//   Returns true if all items in list `l` evaluate as true.  If `func` is given a function liteal
+//   of signature (x), returning bool, then that function literal is evaluated for each list item.
 // Arguments:
 //   l = The list to test for true items.
+//   func = An optional function literal of signature (x), returning bool, to test each list item with.
 // Example:
 //   all([0,false,undef]);  // Returns false.
 //   all([1,false,undef]);  // Returns false.
 //   all([1,5,true]);       // Returns true.
-//   all([[0,0], [0,0]]);   // Returns false.
-//   all([[0,0], [1,0]]);   // Returns false.
+//   all([[0,0], [0,0]]);   // Returns true.
+//   all([[0,0], [1,0]]);   // Returns true.
 //   all([[1,1], [1,1]]);   // Returns true.
-function all(l) =
-    assert( is_list(l), "The input is not a list." )
-    _all(l);
+function all(l, func) =
+    assert(is_list(l), "The input is not a list.")
+    assert(func==undef || is_func(func))
+    is_func(func)
+      ? _all_func(l, func)
+      : _all_bool(l);
 
-function _all(l, i=0, fail=false) =
-    (i>=len(l) || fail)? !fail :
-    _all(
-        l, i+1,
-        fail = is_list(l[i]) ? !_all(l[i]) : !l[i]
-    ) ;
+function _all_func(l, func, i=0, out=true) =
+    i >= len(l) || !out? out :
+    _all_func(l, func, i=i+1, out=out && func(l[i]));
+
+function _all_bool(l, i=0, out=true) =
+    i >= len(l) || !out? out :
+    _all_bool(l, i=i+1, out=out && l[i]);
 
 
 // Function: count_true()
 // Usage:
-//   n = count_true(l)
+//   n = count_true(l,<nmax=>)
+//   n = count_true(l,func,<nmax=>)
 // Description:
 //   Returns the number of items in `l` that evaluate as true.
 //   If `l` is a lists of lists, this is applied recursively to each
@@ -1289,24 +1311,38 @@ function _all(l, i=0, fail=false) =
 //   in all recursive sublists.
 // Arguments:
 //   l = The list to test for true items.
-//   nmax = If given, stop counting if `nmax` items evaluate as true.
+//   func = An optional function literal of signature (x), returning bool, to test each list item with.
+//   ---
+//   nmax = Max number of true items to count.  Default: `undef` (no limit)
 // Example:
 //   count_true([0,false,undef]);  // Returns 0.
 //   count_true([1,false,undef]);  // Returns 1.
 //   count_true([1,5,false]);      // Returns 2.
 //   count_true([1,5,true]);       // Returns 3.
-//   count_true([[0,0], [0,0]]);   // Returns 0.
-//   count_true([[0,0], [1,0]]);   // Returns 1.
-//   count_true([[1,1], [1,1]]);   // Returns 4.
-//   count_true([[1,1], [1,1]], nmax=3);  // Returns 3.
-function _count_true_rec(l, nmax, _cnt=0, _i=0) =
-    _i>=len(l) || (is_num(nmax) && _cnt>=nmax)? _cnt :
-    _count_true_rec(l, nmax, _cnt=_cnt+(l[_i]?1:0), _i=_i+1);
+//   count_true([[0,0], [0,0]]);   // Returns 2.
+//   count_true([[0,0], [1,0]]);   // Returns 2.
+//   count_true([[1,1], [1,1]]);   // Returns 2.
+//   count_true([[1,1], [1,1]], nmax=1);  // Returns 1.
+function count_true(l, func, nmax) = 
+    assert(is_list(l))
+    assert(func==undef || is_func(func))
+    is_func(func)
+      ? _count_true_func(l, func, nmax)
+      : _count_true_bool(l, nmax);
 
-function count_true(l, nmax) = 
-    is_undef(nmax)? len([for (x=l) if(x) 1]) :
-    !is_list(l) ? ( l? 1: 0) :
-    _count_true_rec(l, nmax);
+function _count_true_func(l, func, nmax, i=0, out=0) =
+    i >= len(l) || (nmax!=undef && out>=nmax) ? out :
+    _count_true_func(
+        l, func, nmax, i = i + 1,
+        out = out + (func(l[i])? 1:0)
+    );
+
+function _count_true_bool(l, nmax, i=0, out=0) =
+    i >= len(l) || (nmax!=undef && out>=nmax) ? out :
+    _count_true_bool(
+        l, nmax, i = i + 1,
+        out = out + (l[i]? 1:0)
+    );
 
 
 
@@ -1465,35 +1501,114 @@ function deriv3(data, h=1, closed=false) =
 
 // Section: Complex Numbers
 
-// Function: C_times()
+
+// Function: complex()
 // Usage:
-//   c = C_times(z1,z2)
+//   z = complex(list)
 // Description:
-//   Multiplies two complex numbers represented by 2D vectors.  
-//   Returns a complex number as a 2D vector [REAL, IMAGINARY].
+//   Converts a real valued number, vector or matrix into its complex analog
+//   by replacing all entries with a 2-vector that has zero imaginary part.
+function complex(list) =
+   is_num(list) ? [list,0] :
+   [for(entry=list) is_num(entry) ? [entry,0] : complex(entry)];
+
+
+// Function: c_mul()
+// Usage:
+//   c = c_mul(z1,z2)
+// Description:
+//   Multiplies two complex numbers, vectors or matrices, where complex numbers
+//   or entries are represented as vectors: [REAL, IMAGINARY].  Note that all
+//   entries in both arguments must be complex.  
 // Arguments:
-//   z1 = First complex number, given as a 2D vector [REAL, IMAGINARY]
-//   z2 = Second complex number, given as a 2D vector [REAL, IMAGINARY]
-function C_times(z1,z2) = 
-    assert( is_matrix([z1,z2],2,2), "Complex numbers should be represented by 2D vectors" )
+//   z1 = First complex number, vector or matrix
+//   z2 = Second complex number, vector or matrix
+
+function _split_complex(data) =
+   is_vector(data,2) ? data
+ : is_num(data[0][0]) ? [data*[1,0], data*[0,1]]
+ : [
+    [for(vec=data) vec * [1,0]],
+    [for(vec=data) vec * [0,1]]
+   ];
+
+function _combine_complex(data) =
+    is_vector(data,2) ? data
+  : is_num(data[0][0]) ? [for(i=[0:len(data[0])-1]) [data[0][i],data[1][i]]]
+  : [for(i=[0:1:len(data[0])-1])
+        [for(j=[0:1:len(data[0][0])-1])  
+            [data[0][i][j], data[1][i][j]]]];
+
+function _c_mul(z1,z2) = 
     [ z1.x*z2.x - z1.y*z2.y, z1.x*z2.y + z1.y*z2.x ];
 
-// Function: C_div()
+function c_mul(z1,z2) =
+  is_matrix([z1,z2],2,2) ? _c_mul(z1,z2) :
+  _combine_complex(_c_mul(_split_complex(z1), _split_complex(z2)));
+
+
+// Function: c_div()
 // Usage:
-//   x = C_div(z1,z2)
+//   x = c_div(z1,z2)
 // Description:
 //   Divides two complex numbers represented by 2D vectors.  
 //   Returns a complex number as a 2D vector [REAL, IMAGINARY].
 // Arguments:
 //   z1 = First complex number, given as a 2D vector [REAL, IMAGINARY]
 //   z2 = Second complex number, given as a 2D vector [REAL, IMAGINARY]
-function C_div(z1,z2) = 
+function c_div(z1,z2) = 
     assert( is_vector(z1,2) && is_vector(z2), "Complex numbers should be represented by 2D vectors." )
     assert( !approx(z2,0), "The divisor `z2` cannot be zero." ) 
     let(den = z2.x*z2.x + z2.y*z2.y)
     [(z1.x*z2.x + z1.y*z2.y)/den, (z1.y*z2.x - z1.x*z2.y)/den];
 
-// For the sake of consistence with Q_mul and vmul, C_times should be called C_mul
+
+// Function: c_conj()
+// Usage:
+//   w = c_conj(z)
+// Description:
+//   Computes the complex conjugate of the input, which can be a complex number,
+//   complex vector or complex matrix.  
+function c_conj(z) =
+   is_vector(z,2) ? [z.x,-z.y] :
+   [for(entry=z) c_conj(entry)];
+
+// Function: c_real()
+// Usage:
+//   x = c_real(z)
+// Description:
+//   Returns real part of a complex number, vector or matrix.
+function c_real(z) = 
+     is_vector(z,2) ? z.x
+   : is_num(z[0][0]) ? z*[1,0]
+   : [for(vec=z) vec * [1,0]];
+
+// Function: c_imag()
+// Usage:
+//   x = c_imag(z)
+// Description:
+//   Returns imaginary part of a complex number, vector or matrix.
+function c_imag(z) = 
+     is_vector(z,2) ? z.y
+   : is_num(z[0][0]) ? z*[0,1]
+   : [for(vec=z) vec * [0,1]];
+
+
+// Function: c_ident()
+// Usage:
+//   I = c_ident(n)
+// Description:
+//   Produce an n by n complex identity matrix
+function c_ident(n) = [for (i = [0:1:n-1]) [for (j = [0:1:n-1]) (i==j)?[1,0]:[0,0]]];
+
+// Function: c_norm()
+// Usage:
+//   n = c_norm(z)
+// Description:
+//   Compute the norm of a complex number or vector. 
+function c_norm(z) = norm_fro(z);
+
+
 
 // Section: Polynomials
 
@@ -1539,12 +1654,13 @@ function quadratic_roots(a,b,c,real=false) =
 //   where a_n is the z^n coefficient.  Polynomial coefficients are real.
 //   The result is a number if `z` is a number and a complex number otherwise.
 function polynomial(p,z,k,total) =
-    is_undef(k)
-    ?   assert( is_vector(p) , "Input polynomial coefficients must be a vector." )
-        assert( is_finite(z) || is_vector(z,2), "The value of `z` must be a real or a complex number." )
-        polynomial( _poly_trim(p), z, 0, is_num(z) ? 0 : [0,0])
-    : k==len(p) ? total
-    : polynomial(p,z,k+1, is_num(z) ? total*z+p[k] : C_times(total,z)+[p[k],0]);
+  is_undef(k)
+  ? assert( is_vector(p) , "Input polynomial coefficients must be a vector." )
+    assert( is_finite(z) || is_vector(z,2), "The value of `z` must be a real or a complex number." )
+    polynomial( _poly_trim(p), z, 0, is_num(z) ? 0 : [0,0])
+  : k==len(p) ? total
+  : polynomial(p,z,k+1, is_num(z) ? total*z+p[k] : c_mul(total,z)+[p[k],0]);
+
 
 // Function: poly_mult()
 // Usage:
@@ -1554,12 +1670,12 @@ function polynomial(p,z,k,total) =
 //   Given a list of polynomials represented as real coefficient lists, with the highest degree coefficient first, 
 //   computes the coefficient list of the product polynomial.  
 function poly_mult(p,q) = 
-    is_undef(q) ?
-        len(p)==2 
+  is_undef(q) ?
+    len(p)==2 
         ? poly_mult(p[0],p[1]) 
-        : poly_mult(p[0], poly_mult(select(p,1,-1)))
-    :
-    assert( is_vector(p) && is_vector(q),"Invalid arguments to poly_mult")
+    : poly_mult(p[0], poly_mult(list_tail(p)))
+  :
+  assert( is_vector(p) && is_vector(q),"Invalid arguments to poly_mult")
     p*p==0 || q*q==0
     ? [0]
     : _poly_trim(convolve(p,q));
@@ -1600,7 +1716,7 @@ function _poly_div(n,d,q) =
 ///    or give epsilon for approximate zeros.  
 function _poly_trim(p,eps=0) =
     let( nz = [for(i=[0:1:len(p)-1]) if ( !approx(p[i],0,eps)) i])
-    len(nz)==0 ? [0] : select(p,nz[0],-1);
+    len(nz)==0 ? [0] : list_tail(p,nz[0]);
 
 
 // Function: poly_add()
@@ -1641,7 +1757,7 @@ function poly_roots(p,tol=1e-14,error_bound=false) =
     let( p = _poly_trim(p,eps=0) )
     assert( p!=[0], "Input polynomial cannot be zero." )
     p[len(p)-1] == 0 ?                                       // Strip trailing zero coefficients
-        let( solutions = poly_roots(select(p,0,-2),tol=tol, error_bound=error_bound))
+        let( solutions = poly_roots(list_head(p),tol=tol, error_bound=error_bound))
         (error_bound ? [ [[0,0], each solutions[0]], [0, each solutions[1]]]
                     : [[0,0], each solutions]) :
     len(p)==1 ? (error_bound ? [[],[]] : []) :               // Nonzero constant case has no solutions
@@ -1680,10 +1796,10 @@ function _poly_roots(p, pderiv, s, z, tol, i=0) =
         svals = [for(zk=z) tol*polynomial(s,norm(zk))],
         p_of_z = [for(zk=z) polynomial(p,zk)],
         done = [for(k=[0:n-1]) norm(p_of_z[k])<=svals[k]],
-        newton = [for(k=[0:n-1]) C_div(p_of_z[k], polynomial(pderiv,z[k]))],
-        zdiff = [for(k=[0:n-1]) sum([for(j=[0:n-1]) if (j!=k) C_div([1,0], z[k]-z[j])])],
-        w = [for(k=[0:n-1]) done[k] ? [0,0] : C_div( newton[k],
-                                                     [1,0] - C_times(newton[k], zdiff[k]))]
+        newton = [for(k=[0:n-1]) c_div(p_of_z[k], polynomial(pderiv,z[k]))],
+        zdiff = [for(k=[0:n-1]) sum([for(j=[0:n-1]) if (j!=k) c_div([1,0], z[k]-z[j])])],
+        w = [for(k=[0:n-1]) done[k] ? [0,0] : c_div( newton[k],
+                                                     [1,0] - c_mul(newton[k], zdiff[k]))]
     )
     all(done) ? z : _poly_roots(p,pderiv,s,z-w,tol,i+1);
 

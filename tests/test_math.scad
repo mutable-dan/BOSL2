@@ -83,6 +83,12 @@ module test_is_matrix() {
     assert(!is_matrix([[2,3,4],[5,6,7]],n=5));
     assert(!is_matrix([[2,3],[5,6],[8,9]],m=2,n=3));
     assert(!is_matrix([[2,3,4],[5,6,7]],m=3,n=2));
+    assert(!is_matrix([ [2,[3,4]],
+                        [4,[5,6]]]));
+    assert(!is_matrix([[3,4],[undef,3]]));
+    assert(!is_matrix([[3,4],[3,"foo"]]));
+    assert(!is_matrix([[3,4],[3,3,2]]));
+    assert(!is_matrix([ [3,4],6]));
     assert(!is_matrix(undef));
     assert(!is_matrix(NAN));
     assert(!is_matrix(INF));
@@ -291,15 +297,6 @@ module test_modang() {
     assert_equal(modang(700), -20);
 }
 test_modang();
-
-
-module test_modrange() {
-    assert_equal(modrange(-5,5,3), [1,2]);
-    assert_equal(modrange(-1,4,3), [2,0,1]);
-    assert_equal(modrange(1,8,10,step=2), [1,3,5,7]);
-    assert_equal(modrange(5,12,10,step=2), [5,7,9,1]);
-}
-test_modrange();
 
 
 module test_sqr() {
@@ -732,11 +729,14 @@ module test_any() {
     assert_equal(any([0,false,undef]), false);
     assert_equal(any([1,false,undef]), true);
     assert_equal(any([1,5,true]), true);
-    assert_equal(any([[0,0], [0,0]]), false);
+    assert_equal(any([[0,0], [0,0]]), true);
     assert_equal(any([[0,0], [1,0]]), true);
     assert_equal(any([[false,false],[[false,[false],[[[true]]]],false],[false,false]]), true);
-    assert_equal(any([[false,false],[[false,[false],[[[false]]]],false],[false,false]]), false);
+    assert_equal(any([[false,false],[[false,[false],[[[false]]]],false],[false,false]]), true);
     assert_equal(any([]), false);
+    assert_equal(any([1,3,5,7,9], function (a) a%2==0),false);
+    assert_equal(any([1,3,6,7,9], function (a) a%2==0),true);
+    assert_equal(any([1,3,5,7,9], function (a) a%2!=0),true);
 }
 test_any();
 
@@ -745,12 +745,15 @@ module test_all() {
     assert_equal(all([0,false,undef]), false);
     assert_equal(all([1,false,undef]), false);
     assert_equal(all([1,5,true]), true);
-    assert_equal(all([[0,0], [0,0]]), false);
-    assert_equal(all([[0,0], [1,0]]), false);
+    assert_equal(all([[0,0], [0,0]]), true);
+    assert_equal(all([[0,0], [1,0]]), true);
     assert_equal(all([[1,1], [1,1]]), true);
-    assert_equal(all([[true,true],[[true,[true],[[[true]]]],true],[true,true]]), true);    
-    assert_equal(all([[true,true],[[true,[true],[[[false]]]],true],[true,true]]), false);
+    assert_equal(all([[true,true],[[true,[true],[[[true]]]],true],[true,true]]), true);
+    assert_equal(all([[true,true],[[true,[true],[[[false]]]],true],[true,true]]), true);
     assert_equal(all([]), true);
+    assert_equal(all([1,3,5,7,9], function (a) a%2==0),false);
+    assert_equal(all([1,3,6,8,9], function (a) a%2==0),false);
+    assert_equal(all([1,3,5,7,9], function (a) a%2!=0),true);
 }
 test_all();
 
@@ -764,6 +767,9 @@ module test_count_true() {
     assert_equal(count_true([[0,0], [1,0]]), 2);
     assert_equal(count_true([[1,1], [1,1]]), 2);
     assert_equal(count_true([1,1,1,1,1], nmax=3), 3);
+    assert_equal(count_true([1,3,5,7,9], function (a) a%2==0),0);
+    assert_equal(count_true([1,3,6,8,9], function (a) a%2==0),2);
+    assert_equal(count_true([1,3,5,7,9], function (a) a%2!=0),5);
 }
 test_count_true();
 
@@ -783,6 +789,7 @@ module test_factorial() {
 }
 test_factorial();
 
+
 module test_binomial() {
     assert_equal(binomial(1), [1,1]);
     assert_equal(binomial(2), [1,2,1]);
@@ -790,6 +797,7 @@ module test_binomial() {
     assert_equal(binomial(5), [1,5,10,10,5,1]);
 }
 test_binomial();
+
 
 module test_binomial_coefficient() {
     assert_equal(binomial_coefficient(2,1), 2);
@@ -809,8 +817,8 @@ module test_gcd() {
     assert_equal(gcd(39, 101),1);
     assert_equal(gcd(15,-25), 5);
     assert_equal(gcd(-15,25), 5);
-    assert_equal(gcd(5,0),5);
-    assert_equal(gcd(0,5),5);
+    assert_equal(gcd(5,0), 5);
+    assert_equal(gcd(0,5), 5);
 }
 test_gcd();
 
@@ -824,19 +832,87 @@ module test_lcm() {
 test_lcm();
 
 
-module test_C_times() {
-    assert_equal(C_times([4,5],[9,-4]), [56,29]);
-    assert_equal(C_times([-7,2],[24,3]), [-174, 27]);
+
+module test_complex(){
+    assert_equal( complex(ident(4)), c_ident(4));
+    assert_equal( complex(3), [3,0]);
+    assert_equal( complex([1,2]), [[1,0],[2,0]]);
+    assert_equal( complex([[1,2],[3,4]]), [[ [1,0],[2,0] ], [ [3,0],[4,0]]]);
 }
-test_C_times();
+test_complex();
+
+module test_c_mul() {
+    assert_equal(c_mul([4,5],[9,-4]), [56,29]);
+    assert_equal(c_mul([-7,2],[24,3]), [-174, 27]);
+    assert_equal(c_mul([3,4], [[3,-7], [4,9], [4,8]]), [[37,-9],[-24,43], [-20,40]]);
+    assert_equal(c_mul([[3,-7], [4,9], [4,8]], [[1,1],[3,4],[-3,4]]), [-58,31]);
+    M = [
+           [ [3,4], [9,-1], [4,3] ],
+           [ [2,9], [4,9], [3,-1] ]
+        ];
+    assert_equal(c_mul(M, [ [3,4], [4,4],[5,5]]), [[38,91], [-30, 97]]);
+    assert_equal(c_mul([[4,4],[9,1]], M), [[5,111],[67,117], [32,22]]);
+    assert_equal(c_mul(M,transpose(M)), [  [[80,30], [30, 117]], [[30,117], [-134, 102]]]);
+    assert_equal(c_mul(transpose(M),M), [  [[-84,60],[-42,87],[15,50]], [[-42,87],[15,54],[60,46]], [[15,50],[60,46],[15,18]]]);
+}
+test_c_mul();
 
 
-module test_C_div() {
-    assert_equal(C_div([56,29],[9,-4]), [4,5]);
-    assert_equal(C_div([-174,27],[-7,2]), [24,3]);
+module test_c_div() {
+    assert_equal(c_div([56,29],[9,-4]), [4,5]);
+    assert_equal(c_div([-174,27],[-7,2]), [24,3]);
 }    
-test_C_div();
+test_c_div();
 
+module test_c_conj(){
+    assert_equal(c_conj([3,4]), [3,-4]);
+    assert_equal(c_conj(           [ [2,9], [4,9], [3,-1] ]),            [ [2,-9], [4,-9], [3,1] ]);
+    M = [
+           [ [3,4], [9,-1], [4,3] ],
+           [ [2,9], [4,9], [3,-1] ]
+        ];
+    Mc = [
+           [ [3,-4], [9,1], [4,-3] ],
+           [ [2,-9], [4,-9], [3,1] ]
+        ];
+    assert_equal(c_conj(M), Mc);
+}
+test_c_conj();
+
+module test_c_real(){
+    M = [
+           [ [3,4], [9,-1], [4,3] ],
+           [ [2,9], [4,9], [3,-1] ]
+        ];
+    assert_equal(c_real(M), [[3,9,4],[2,4,3]]);
+    assert_equal(c_real(           [ [3,4], [9,-1], [4,3] ]), [3,9,4]);
+    assert_equal(c_real([3,4]),3);
+}
+test_c_real();
+
+
+module test_c_imag(){
+    M = [
+           [ [3,4], [9,-1], [4,3] ],
+           [ [2,9], [4,9], [3,-1] ]
+        ];
+    assert_equal(c_imag(M), [[4,-1,3],[9,9,-1]]);
+    assert_equal(c_imag(           [ [3,4], [9,-1], [4,3] ]), [4,-1,3]);
+    assert_equal(c_imag([3,4]),4);
+}
+test_c_imag();
+
+
+module test_c_ident(){
+  assert_equal(c_ident(3), [[[1, 0], [0, 0], [0, 0]], [[0, 0], [1, 0], [0, 0]], [[0, 0], [0, 0], [1, 0]]]);
+}
+test_c_ident();
+
+module test_c_norm(){
+  assert_equal(c_norm([3,4]), 5);
+  assert_approx(c_norm([[3,4],[5,6]]), 9.273618495495704);
+}
+test_c_norm();
 
 module test_back_substitute(){
    R = [[12,4,3,2],
@@ -1057,7 +1133,7 @@ module test_real_roots(){
    // Wilkinson polynomial is a nasty test:
    assert_approx(
        sort(real_roots(poly_mult([[1,-1],[1,-2],[1,-3],[1,-4],[1,-5],[1,-6],[1,-7],[1,-8],[1,-9],[1,-10]]))),
-       list_range(n=10,s=1));
+       count(10,1));
    assert_equal(real_roots([3]), []);
    assert_equal(real_roots(poly_mult([[1,-2,5],[12,-24,24],[-2, -12, -20],[1,-10,50]])),[]);
    assert_equal(real_roots(poly_mult([[1,-2,5],[12,-24,24],[-2, -12, -20],[1,-10,50],[1,0,0]])),[0,0]);

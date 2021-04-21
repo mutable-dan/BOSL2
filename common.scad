@@ -6,12 +6,15 @@
 //////////////////////////////////////////////////////////////////////
 
 
+
 // Section: Type handling helpers.
 
 
 // Function: typeof()
 // Usage:
 //   typ = typeof(x);
+// Topics: Type Checking
+// See Also: is_type()
 // Description:
 //   Returns a string representing the type of the value.  One of "undef", "boolean", "number", "nan", "string", "list", "range", "function" or "invalid".
 //   Some malformed "ranges", like '[0:NAN:INF]' and '[0:"a":INF]', may be classified as "undef" or "invalid".
@@ -36,10 +39,11 @@ function typeof(x) =
     "invalid";
 
 
-
 // Function: is_type()
 // Usage:
 //   bool = is_type(x, types);
+// Topics: Type Checking
+// See Also: typeof()
 // Description:
 //   Returns true if the type of the value `x` is one of those given as strings in the list `types`. 
 //   Valid types are "undef", "boolean", "number", "nan", "string", "list", "range", or "function".
@@ -63,6 +67,8 @@ function is_type(x,types) =
 // Function: is_def()
 // Usage:
 //   bool = is_def(x);
+// Topics: Type Checking
+// See Also: typeof(), is_type(), is_str()
 // Description:
 //   Returns true if `x` is not `undef`.  False if `x==undef`.
 // Example:
@@ -76,6 +82,8 @@ function is_def(x) = !is_undef(x);
 // Function: is_str()
 // Usage:
 //   bool = is_str(x);
+// Topics: Type Checking
+// See Also: typeof(), is_type(), is_int(), is_def()
 // Description:
 //   Returns true if `x` is a string.  A shortcut for `is_string()`.
 // Example:
@@ -87,9 +95,12 @@ function is_str(x) = is_string(x);
 
 
 // Function: is_int()
+// Alias: is_integer()
 // Usage:
 //   bool = is_int(n);
 //   bool = is_integer(n);
+// Topics: Type Checking
+// See Also: typeof(), is_type(), is_str(), is_def()
 // Description:
 //   Returns true if the given value is an integer (it is a number and it rounds to itself).  
 // Example:
@@ -104,6 +115,8 @@ function is_integer(n) = is_finite(n) && n == round(n);
 // Function: is_nan()
 // Usage:
 //   bool = is_nan(x);
+// Topics: Type Checking
+// See Also: typeof(), is_type(), is_str(), is_def(), is_int()
 // Description:
 //   Returns true if a given value `x` is nan, a floating point value representing "not a number".
 // Example:
@@ -118,6 +131,8 @@ function is_nan(x) = (x!=x);
 // Function: is_finite()
 // Usage:
 //   bool = is_finite(x);
+// Topics: Type Checking
+// See Also: typeof(), is_type(), is_str(), is_def(), is_int(), is_nan()
 // Description:
 //   Returns true if a given value `x` is a finite number.
 // Example:
@@ -134,6 +149,8 @@ function is_finite(x) = is_num(x) && !is_nan(0*x);
 // Function: is_range()
 // Usage:
 //   bool = is_range(x);
+// Topics: Type Checking
+// See Also: typeof(), is_type(), is_str(), is_def(), is_int()
 // Description:
 //   Returns true if its argument is a range
 // Example:
@@ -149,6 +166,8 @@ function is_range(x) = !is_list(x) && is_finite(x[0]) && is_finite(x[1]) && is_f
 // Function: valid_range()
 // Usage:
 //   bool = valid_range(x);
+// Topics: Type Checking
+// See Also: typeof(), is_type(), is_str(), is_def(), is_int(), is_range()
 // Description:
 //   Returns true if its argument is a valid range (deprecated ranges excluded).
 // Example:
@@ -166,45 +185,54 @@ function valid_range(x) =
          : ( x[1]<0 && x[0]>=x[2] ) );
 
 
-// Function: is_list_of()
+// Function: is_func()
 // Usage:
-//   bool = is_list_of(list, pattern);
+//   bool = is_func(x);
 // Description:
-//   Tests whether the input is a list whose entries are all numeric lists that have the same
-//   list shape as the pattern.
+//   Returns true if OpenSCAD supports function literals, and the given item is one.
+// Arguments:
+//   x = The value to check against.
 // Example:
-//   is_list_of([3,4,5], 0);            // Returns true
-//   is_list_of([3,4,undef], 0);        // Returns false
-//   is_list_of([[3,4],[4,5]], [1,1]);  // Returns true
-//   is_list_of([[3,"a"],[4,true]], [1,undef]);  // Returns true
-//   is_list_of([[3,4], 6, [4,5]], [1,1]);  // Returns false
-//   is_list_of([[1,[3,4]], [4,[5,6]]], [1,[2,3]]);    // Returns true
-//   is_list_of([[1,[3,INF]], [4,[5,6]]], [1,[2,3]]);  // Returns false
-//   is_list_of([], [1,[2,3]]);                        // Returns true
-function is_list_of(list,pattern) =
-    let(pattern = 0*pattern)
-    is_list(list) &&
-    []==[for(entry=0*list) if (entry != pattern) entry];
+//   f = function (a) a==2;
+//   bool = is_func(f);  // Returns: true
+function is_func(x) = version_num()>20210000 && is_function(x);
 
 
 // Function: is_consistent()
 // Usage:
-//   bool = is_consistent(list);
+//   bool = is_consistent(list, <pattern>);
+// Topics: Type Checking
+// See Also: typeof(), is_type(), is_str(), is_def(), is_int(), is_range(), is_homogeneous()
 // Description:
 //   Tests whether input is a list of entries which all have the same list structure
-//   and are filled with finite numerical data. It returns `true`for the empty list. 
+//   and are filled with finite numerical data.  You can optionally specify a required 
+//   list structure with the pattern argument.  
+//   It returns `true` for the empty list regardless the value of the `pattern`.
+// Arguments:
+//   list = list to check
+//   pattern = optional pattern required to match
 // Example:
 //   is_consistent([3,4,5]);              // Returns true
 //   is_consistent([[3,4],[4,5],[6,7]]);  // Returns true
 //   is_consistent([[3,4,5],[3,4]]);      // Returns false
 //   is_consistent([[3,[3,4,[5]]], [5,[2,9,[9]]]]); // Returns true
 //   is_consistent([[3,[3,4,[5]]], [5,[2,9,9]]]);   // Returns false
-function is_consistent(list) =
-  /*is_list(list) &&*/ is_list_of(list, _list_pattern(list[0]));
-
+//   is_consistent([3,4,5], 0);            // Returns true
+//   is_consistent([3,4,undef], 0);        // Returns false
+//   is_consistent([[3,4],[4,5]], [1,1]);  // Returns true
+//   is_consistent([[3,"a"],[4,true]], [1,undef]);  // Returns true
+//   is_consistent([[3,4], 6, [4,5]], [1,1]);  // Returns false
+//   is_consistent([[1,[3,4]], [4,[5,6]]], [1,[2,3]]);    // Returns true
+//   is_consistent([[1,[3,INF]], [4,[5,6]]], [1,[2,3]]);  // Returns false
+//   is_consistent([], [1,[2,3]]);                        // Returns true
+function is_consistent(list, pattern) =
+    is_list(list) 
+    && (len(list)==0 
+       || (let(pattern = is_undef(pattern) ? _list_pattern(list[0]): _list_pattern(pattern) )
+          []==[for(entry=0*list) if (entry != pattern) entry]));
 
 //Internal function
-//Creates a list with the same structure of `list` with each of its elements substituted by 0.
+//Creates a list with the same structure of `list` with each of its elements replaced by 0.
 function _list_pattern(list) =
   is_list(list) 
   ? [for(entry=list) is_list(entry) ? _list_pattern(entry) : 0]
@@ -214,17 +242,21 @@ function _list_pattern(list) =
 // Function: same_shape()
 // Usage:
 //   bool = same_shape(a,b);
+// Topics: Type Checking
+// See Also: is_homogeneous(), is_consistent()
 // Description:
 //   Tests whether the inputs `a` and `b` are both numeric and are the same shaped list.
 // Example:
 //   same_shape([3,[4,5]],[7,[3,4]]);   // Returns true
 //   same_shape([3,4,5], [7,[3,4]]);    // Returns false
-function same_shape(a,b) = _list_pattern(a) == b*0;
+function same_shape(a,b) = is_def(b) && _list_pattern(a) == b*0;
 
 
 // Function: is_bool_list()
 // Usage:
 //   check = is_bool_list(list,<length>)
+// Topics: Type Checking
+// See Also: is_homogeneous(), is_consistent()
 // Description:
 //   Tests whether input is a list containing only booleans, and optionally checks its length.
 // Arguments:
@@ -240,8 +272,11 @@ function is_bool_list(list, length) =
 // Function: default()
 // Usage:
 //   val = default(val, dflt);
+// Topics: Undef Handling
+// See Also: first_defined(), one_defined(), num_defined()
 // Description:
-//   Returns the value given as `v` if it is not `undef`.  Otherwise, returns the value of `dflt`.
+//   Returns the value given as `v` if it is not `undef`.
+//   Otherwise, returns the value of `dflt`.
 // Arguments:
 //   v = Value to pass through if not `undef`.
 //   dflt = Value to return if `v` *is* `undef`.
@@ -251,12 +286,16 @@ function default(v,dflt=undef) = is_undef(v)? dflt : v;
 // Function: first_defined()
 // Usage:
 //   val = first_defined(v, <recursive>);
+// Topics: Undef Handling
+// See Also: default(), one_defined(), num_defined(), any_defined(), all_defined()
 // Description:
 //   Returns the first item in the list that is not `undef`.
 //   If all items are `undef`, or list is empty, returns `undef`.
 // Arguments:
 //   v = The list whose items are being checked.
 //   recursive = If true, sublists are checked recursively for defined values.  The first sublist that has a defined item is returned.
+// Examples:
+//   val = first_defined([undef,7,undef,true]);  // Returns: 7
 function first_defined(v,recursive=false,_i=0) =
     _i<len(v) && (
         is_undef(v[_i]) || (
@@ -270,6 +309,8 @@ function first_defined(v,recursive=false,_i=0) =
 // Function: one_defined()
 // Usage:
 //   val = one_defined(vals, names, <dflt>)
+// Topics: Undef Handling
+// See Also: default(), first_defined(), num_defined(), any_defined(), all_defined()
 // Description:
 //   Examines the input list `vals` and returns the entry which is not `undef`.
 //   If more than one entry is not `undef` then an error is asserted, specifying
@@ -283,7 +324,8 @@ function first_defined(v,recursive=false,_i=0) =
 // Examples:
 //   length = one_defined([length,L,l], ["length","L","l"]);
 //   length = one_defined([length,L,l], "length,L,l", dflt=1);
-function one_defined(vals, names, dflt=_UNDEF) =
+
+function one_defined(vals, names, dflt=_UNDEF) = 
     let(
         checkargs = is_list(names)? assert(len(vals) == len(names)) :
             is_string(names)? let(
@@ -307,6 +349,8 @@ function one_defined(vals, names, dflt=_UNDEF) =
 // Function: num_defined()
 // Usage:
 //   cnt = num_defined(v);
+// Topics: Undef Handling
+// See Also: default(), first_defined(), one_defined(), any_defined(), all_defined()
 // Description:
 //   Counts how many items in list `v` are not `undef`.
 // Example:
@@ -318,6 +362,8 @@ function num_defined(v) =
 // Function: any_defined()
 // Usage:
 //   bool = any_defined(v, <recursive>);
+// Topics: Undef Handling
+// See Also: default(), first_defined(), one_defined(), num_defined(), all_defined()
 // Description:
 //   Returns true if any item in the given array is not `undef`.
 // Arguments:
@@ -360,6 +406,8 @@ function all_defined(v,recursive=false) =
 // Function: get_anchor()
 // Usage:
 //   anchr = get_anchor(anchor,center,<uncentered>,<dflt>);
+// Topics: Argument Handling
+// See Also: get_radius()
 // Description:
 //   Calculated the correct anchor from `anchor` and `center`.  In order:
 //   - If `center` is not `undef` and `center` evaluates as true, then `CENTER` (`[0,0,0]`) is returned.
@@ -388,6 +436,8 @@ function get_anchor(anchor,center,uncentered=BOT,dflt=CENTER) =
 // Function: get_radius()
 // Usage:
 //   r = get_radius(<r1=>, <r2=>, <r=>, <d1=>, <d2=>, <d=>, <dflt=>);
+// Topics: Argument Handling
+// See Also: get_anchor()
 // Description:
 //   Given various radii and diameters, returns the most specific radius.  If a diameter is most
 //   specific, returns half its value, giving the radius.  If no radii or diameters are defined,
@@ -418,105 +468,25 @@ function get_anchor(anchor,center,uncentered=BOT,dflt=CENTER) =
 //   r = get_radius(r1=8, d=6, dflt=1);              // Returns: 8
 function get_radius(r1, r2, r, d1, d2, d, dflt) = 
     assert(num_defined([r1,d1,r2,d2])<2, "Conflicting or redundant radius/diameter arguments given.")
-    !is_undef(r1) ?   assert(is_finite(r1), "Invalid radius r1." ) r1 
-    : !is_undef(r2) ? assert(is_finite(r2), "Invalid radius r2." ) r2
-    : !is_undef(d1) ? assert(is_finite(d1), "Invalid diameter d1." ) d1/2
-    : !is_undef(d2) ? assert(is_finite(d2), "Invalid diameter d2." ) d2/2
-    : !is_undef(r)
-      ? assert(is_undef(d), "Conflicting or redundant radius/diameter arguments given.")
-        assert(is_finite(r) || is_vector(r,1) || is_vector(r,2), "Invalid radius r." )
-        r 
-    : !is_undef(d) ? assert(is_finite(d) || is_vector(d,1) || is_vector(d,2), "Invalid diameter d." ) d/2
-    : dflt;
-
-
-// Function: get_named_args()
-// Usage:
-//   function f(pos1=_UNDEF, pos2=_UNDEF,...,named1=_UNDEF, named2=_UNDEF, ...) = let(args = get_named_args([pos1, pos2, ...], [[named1, default1], [named2, default2], ...]), named1=args[0], named2=args[1], ...)
-// Description:
-//   Given the values of some positional and named arguments, returns a list of the values assigned to
-//   named parameters.  in the following steps:
-//   - First, all named parameters which were explicitly assigned in the function call take their
-//     provided value.
-//   - Then, any positional arguments are assigned to remaining unassigned
-//     parameters; this is governed both by the `priority` entries (if there are `N` positional
-//     arguments, then the `N` parameters with lowest `priority` value will be assigned) and by the
-//     order of the positional arguments (matching that of the assigned named parameters).  If no
-//     priority is given, then these two ordering coincide: parameters are assigned in order, starting
-//     from the first one.
-//   - Finally, any remaining named parameters can take default values.  If no default values are
-//     given, then `undef` is used.
-//   .
-//   This allows an author to declare a function prototype with named or optional parameters, so that
-//   the user may then call this function using either positional or named parameters. In practice the
-//   author will declare the function as using *both* positional and named parameters, and let
-//   `get_named_args()` do the parsing from the whole set of arguments.  See the example below.
-//   .
-//   This supports the user explicitly passing `undef` as a function argument.  To distinguish between
-//   an intentional `undef` and the absence of an argument, we use a custom `_UNDEF` value as a guard
-//   marking the absence of any arguments (in practice, `_UNDEF` is a random-generated string, which
-//   will never coincide with any useful user value).  This forces the author to declare all the
-//   function parameters as having `_UNDEF` as their default value.
-// Arguments:
-//   positional = The list of values of positional arguments.
-//   named = The list of named arguments; each entry of the list has the form `[passed-value, <default-value>, <priority>]`, where `passed-value` is the value that was passed at function call; `default-value` is the value that will be used if nothing is read from either named or positional arguments; `priority` is the priority assigned to this argument (lower means more priority, default value is `+inf`). Since stable sorting is used, if no priority at all is given, all arguments will be read in order.
-//   _undef = The default value used by the calling function for all arguments. The default value, `_UNDEF`, is a random string. This value **must** be the default value of all parameters in the outer function call (see example below).
-//
-// Example: a function with prototype `f(named1,< <named2>, named3 >)`
-//   function f(_p1=_UNDEF, _p2=_UNDEF, _p3=_UNDEF,
-//              arg1=_UNDEF, arg2=_UNDEF, arg3=_UNDEF) =
-//      let(named = get_named_args([_p1, _p2, _p3],
-//          [[arg1, "default1",0], [arg2, "default2",2], [arg3, "default3",1]]))
-//      named;
-//   // all default values or all parameters provided:
-//   echo(f());
-//   // ["default1", "default2", "default3"]
-//   echo(f("given2", "given3", arg1="given1"));
-//   // ["given1", "given2", "given3"]
-//   
-//   // arg1 has highest priority, and arg3 is higher than arg2:
-//   echo(f("given1"));
-//   // ["given1", "default2", "default3"]
-//   echo(f("given3", arg1="given1"));
-//   // ["given1", "default2", "given3"]
-//   
-//   // explicitly passing undef is allowed:
-//   echo(f(undef, arg1="given1", undef));
-//   // ["given1", undef, undef]
-
-// a value that the user should never enter randomly;
-// result of `dd if=/dev/random bs=32 count=1 |base64` :
-_UNDEF="LRG+HX7dy89RyHvDlAKvb9Y04OTuaikpx205CTh8BSI";
-
-/* Note: however tempting it might be, it is *not* possible to accept
- * named argument as a list [named1, named2, ...] (without default
- * values), because the values [named1, named2...] themselves might be
- * lists, and we will not be able to distinguish the two cases. */
-function get_named_args(positional, named, _undef=_UNDEF) =
-    let(deft = [for(p=named) p[1]], // default is undef
-        // indices of the values to fetch from positional args:
-        unknown = [for(x=enumerate(named)) if(x[1][0]==_undef) x[0]],
-        // number of values given to positional arguments:
-        n_positional = count_true([for(p=positional) p!=_undef]))
-    assert(n_positional <= len(unknown),
-      str("too many positional arguments (", n_positional, " given, ",
-          len(unknown), " required)"))
+    assert(num_defined([r,d])<2, "Conflicting or redundant radius/diameter arguments given.")
     let(
-        // those elements which have no priority assigned go last (prio=+∞):
-        prio = sortidx([for(u=unknown) default(named[u][2], 1/0)]),
-        // list of indices of values assigned from positional arguments:
-        assigned = [for(a=sort([for(i=[0:1:n_positional-1]) prio[i]]))
-          unknown[a]])
-    [ for(e = enumerate(named))
-      let(idx=e[0], val=e[1][0], ass=search(idx, assigned))
-        val != _undef ? val :
-        ass != [] ? positional[ass[0]] :
-        deft[idx] ];
+        rad = !is_undef(r1) ?  r1 
+            : !is_undef(d1) ?  d1/2
+            : !is_undef(r2) ?  r2
+            : !is_undef(d2) ?  d2/2
+            : !is_undef(r)  ?  r
+            : !is_undef(d)  ?  d/2
+            : dflt
+    )
+    assert(is_undef(dflt) || is_finite(rad) || is_vector(rad), "Invalid radius." )
+    rad;
 
 
 // Function: scalar_vec3()
 // Usage:
 //   vec = scalar_vec3(v, <dflt>);
+// Topics: Argument Handling
+// See Also: get_anchor(), get_radius(), force_list()
 // Description:
 //   If `v` is a scalar, and `dflt==undef`, returns `[v, v, v]`.
 //   If `v` is a scalar, and `dflt!=undef`, returns `[v, dflt, dflt]`.
@@ -539,6 +509,7 @@ function scalar_vec3(v, dflt) =
 // Function: segs()
 // Usage:
 //   sides = segs(r);
+// Topics: Geometry
 // Description:
 //   Calculate the standard number of sides OpenSCAD would give a circle based on `$fn`, `$fa`, and `$fs`.
 // Arguments:
@@ -555,6 +526,8 @@ function segs(r) =
 // Module: no_children()
 // Usage:
 //   no_children($children);
+// Topics: Error Checking
+// See Also: no_function(), no_module()
 // Description:
 //   Assert that the calling module does not support children.  Prints an error message to this effect and fails if children are present,
 //   as indicated by its argument.
@@ -575,6 +548,8 @@ module no_children(count) {
 // Function: no_function()
 // Usage:
 //   dummy = no_function(name)
+// Topics: Error Checking
+// See Also: no_children(), no_module()
 // Description:
 //   Asserts that the function, "name", only exists as a module.
 // Example:
@@ -586,6 +561,8 @@ function no_function(name) =
 // Module: no_module()
 // Usage:
 //   no_module();
+// Topics: Error Checking
+// See Also: no_children(), no_function()
 // Description:
 //   Asserts that the called module exists only as a function.
 // Example:
@@ -594,6 +571,7 @@ module no_module() {
     assert(false, str("You called ",parent_module(1),"() as a module but it is available only as a function"));
 }    
   
+
 
 // Section: Testing Helpers
 
@@ -606,6 +584,8 @@ function _valstr(x) =
 // Module: assert_approx()
 // Usage:
 //   assert_approx(got, expected, <info>);
+// Topics: Error Checking, Debugging
+// See Also: no_children(), no_function(), no_module(), assert_equal()
 // Description:
 //   Tests if the value gotten is what was expected.  If not, then
 //   the expected and received values are printed to the console and
@@ -615,7 +595,7 @@ function _valstr(x) =
 //   expected = The value that was expected.
 //   info = Extra info to print out to make the error clearer.
 // Example:
-//   assert_approx(1/3, 0.333333333333333, str("numer=",1,", demon=",3));
+//   assert_approx(1/3, 0.333333333333333, str("number=",1,", demon=",3));
 module assert_approx(got, expected, info) {
     no_children($children);
     if (!approx(got, expected)) {
@@ -636,6 +616,8 @@ module assert_approx(got, expected, info) {
 // Module: assert_equal()
 // Usage:
 //   assert_equal(got, expected, <info>);
+// Topics: Error Checking, Debugging
+// See Also: no_children(), no_function(), no_module(), assert_approx()
 // Description:
 //   Tests if the value gotten is what was expected.  If not, then the expected and received values
 //   are printed to the console and an assertion is thrown to stop execution.
@@ -665,6 +647,8 @@ module assert_equal(got, expected, info) {
 // Module: shape_compare()
 // Usage:
 //   shape_compare(<eps>) {test_shape(); expected_shape();}
+// Topics: Error Checking, Debugging, Testing
+// See Also: assert_approx(), assert_equal()
 // Description:
 //   Compares two child shapes, returning empty geometry if they are very nearly the same shape and size.
 //   Returns the differential geometry if they are not quite the same shape and size.
@@ -743,10 +727,12 @@ module shape_compare(eps=1/1024) {
 // Function: looping()
 // Usage:
 //   bool = looping(state);
+// Topics: Iteration
+// See Also: loop_while(), loop_done()
 // Description:
 //   Returns true if the `state` value indicates the current loop should continue.  This is useful
 //   when using C-style for loops to iteratively calculate a value.  Used with `loop_while()` and
-//   `loop_done()`.  See [Looping Helpers](#5-looping-helpers) for an example.
+//   `loop_done()`.  See [Looping Helpers](section-looping-helpers) for an example.
 // Arguments:
 //   state = The loop state value.
 function looping(state) = state < 2;
@@ -755,11 +741,13 @@ function looping(state) = state < 2;
 // Function: loop_while()
 // Usage:
 //   state = loop_while(state, continue);
+// Topics: Iteration
+// See Also: looping(), loop_done()
 // Description:
 //   Given the current `state`, and a boolean `continue` that indicates if the loop should still be
 //   continuing, returns the updated state value for the the next loop.  This is useful when using
 //   C-style for loops to iteratively calculate a value.  Used with `looping()` and `loop_done()`.
-//   See [Looping Helpers](#5-looping-helpers) for an example.
+//   See [Looping Helpers](section-looping-helpers) for an example.
 // Arguments:
 //   state = The loop state value.
 //   continue = A boolean value indicating whether the current loop should progress.
@@ -771,6 +759,8 @@ function loop_while(state, continue) =
 // Function: loop_done()
 // Usage:
 //   bool = loop_done(state);
+// Topics: Iteration
+// See Also: looping(), loop_while()
 // Description:
 //   Returns true if the `state` value indicates the loop is finishing.  This is useful when using
 //   C-style for loops to iteratively calculate a value.  Used with `looping()` and `loop_while()`.

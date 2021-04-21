@@ -217,16 +217,6 @@ module test_valid_range() {
 }
 test_valid_range();
 
-module test_is_list_of() {
-    assert(is_list_of([3,4,5], 0));
-    assert(!is_list_of([3,4,undef], 0));
-    assert(is_list_of([[3,4],[4,5]], [1,1]));
-    assert(!is_list_of([[3,4], 6, [4,5]], [1,1]));
-    assert(is_list_of([[1,[3,4]], [4,[5,6]]], [1,[2,3]]));
-    assert(!is_list_of([[1,[3,INF]], [4,[5,6]]], [1,[2,3]]));
-}
-test_is_list_of();
-
 module test_is_consistent() {
     assert(is_consistent([]));
     assert(is_consistent([[],[]]));
@@ -238,6 +228,13 @@ module test_is_consistent() {
     assert(!is_consistent([[3,4,5],[3,4]]));
     assert(is_consistent([[3,[3,4,[5]]], [5,[2,9,[9]]]]));
     assert(!is_consistent([[3,[3,4,[5]]], [5,[2,9,9]]]));
+
+    assert(is_consistent([3,4,5], 0));
+    assert(!is_consistent([3,4,undef], 0));
+    assert(is_consistent([[3,4],[4,5]], [1,1]));
+    assert(!is_consistent([[3,4], 6, [4,5]], [1,1]));
+    assert(is_consistent([[1,[3,4]], [4,[5,6]]], [1,[2,3]]));
+    assert(!is_consistent([[1,[3,INF]], [4,[5,6]]], [1,[2,3]]));
 }
 test_is_consistent();
 
@@ -245,6 +242,12 @@ test_is_consistent();
 module test_same_shape() {
     assert(same_shape([3,[4,5]],[7,[3,4]]));
     assert(!same_shape([3,4,5], [7,[3,4]]));
+    assert(!same_shape([3,4,5],undef));
+    assert(!same_shape([5,3],3));
+    assert(!same_shape(undef,[3,4]));
+    assert(same_shape(4,5));
+    assert(!same_shape(5,undef));
+           
 }
 test_same_shape();
 

@@ -27,6 +27,20 @@ module test_select() {
 }
 test_select();
 
+
+module test_slice() {
+    l = [3,4,5,6,7,8,9];
+    assert(slice(l, 5, 6) == [8,9]);
+    assert(slice(l, 5, 8) == [8,9]);
+    assert(slice(l, 5, 2) == []);
+    assert(slice(l, -3, -1) == [7,8,9]);
+    assert(slice(l, 3, 3) == [6]);
+    assert(slice(l, 4) == [7,8,9]);
+    assert(slice(l, -2) == [8,9]);
+}
+test_slice();
+
+
 module test_last() {
     list = [1,2,3,4];
     assert(last(list)==4);
@@ -34,24 +48,33 @@ module test_last() {
 }
 test_last();
 
-module test_delete_last() {
+
+module test_list_head() {
     list = [1,2,3,4];
-    assert(delete_last(list) == [1,2,3]);
-    assert(delete_last([1]) == []);
-    assert(delete_last([]) == []);
+    assert_equal(list_head(list), [1,2,3]);
+    assert_equal(list_head([1]), []);
+    assert_equal(list_head([]), []);
+    assert_equal(list_head(list,-3), [1,2]);
+    assert_equal(list_head(list,1), [1,2]);
+    assert_equal(list_head(list,2), [1,2,3]);
+    assert_equal(list_head(list,6), [1,2,3,4]);
+    assert_equal(list_head(list,-6), []);
 }
-test_delete_last();
+test_list_head();
 
 
-module test_slice() {
-    assert(slice([3,4,5,6,7,8,9], 3, 5) == [6,7]);
-    assert(slice([3,4,5,6,7,8,9], 2, -1) == [5,6,7,8,9]);
-    assert(slice([3,4,5,6,7,8,9], 1, 1) == []);
-    assert(slice([3,4,5,6,7,8,9], 6, -1) == [9]);
-    assert(slice([3,4,5,6,7,8,9], 2, -2) == [5,6,7,8]);
-    assert(slice([], 2, -2) == []);
+module test_list_tail() {
+    list = [1,2,3,4];
+    assert_equal(list_tail(list), [2,3,4]);
+    assert_equal(list_tail([1]), []);
+    assert_equal(list_tail([]), []);
+    assert_equal(list_tail(list,-3), [2,3,4]);
+    assert_equal(list_tail(list,2), [3,4]);
+    assert_equal(list_tail(list,3), [4]);
+    assert_equal(list_tail(list,6), []);
+    assert_equal(list_tail(list,-6), [1,2,3,4]);
 }
-test_slice();
+test_list_tail();
 
 
 module test_in_list() {
@@ -110,19 +133,13 @@ module test_repeat() {
 test_repeat();
 
 
-module test_list_range() {
-    assert(list_range(4) == [0,1,2,3]);
-    assert(list_range(n=4, step=2) == [0,2,4,6]);
-    assert(list_range(n=4, s=3, step=3) == [3,6,9,12]);
-    assert(list_range(e=3) == [0,1,2,3]);
-    assert(list_range(e=6, step=2) == [0,2,4,6]);
-    assert(list_range(s=3, e=5) == [3,4,5]);
-    assert(list_range(s=3, e=8, step=2) == [3,5,7]);
-    assert(list_range(s=4, e=8, step=2) == [4,6,8]);
-    assert(list_range(e=4, n=3) == [0,2,4]);
-    assert(list_range(n=4, s=[3,4], step=[2,3]) == [[3,4], [5,7], [7,10], [9,13]]);
+module test_count() {
+    assert_equal(count(5), [0,1,2,3,4]);
+    assert_equal(count(5,3), [3,4,5,6,7]);
+    assert_equal(count(4,3,2), [3,5,7,9]);
+    assert_equal(count(5,0,0.25), [0, 0.25, 0.5, 0.75, 1.0]);
 }
-test_list_range();
+test_count();
 
 
 module test_reverse() {
@@ -282,7 +299,7 @@ test_enumerate();
 
 
 module test_shuffle() {
-    nums1 = [for (i=list_range(100)) i];
+    nums1 = count(100);
     nums2 = shuffle(nums1,33);
     nums3 = shuffle(nums2,99);
     assert(sort(nums2)==nums1);
@@ -468,11 +485,11 @@ module test_triplet() {
 test_triplet();
 
 
-module test_permute() {
-    assert(permute([3,4,5,6]) ==  [[3,4],[3,5],[3,6],[4,5],[4,6],[5,6]]);
-    assert(permute([3,4,5,6],n=3) == [[3,4,5],[3,4,6],[3,5,6],[4,5,6]]);
+module test_combinations() {
+    assert(combinations([3,4,5,6]) ==  [[3,4],[3,5],[3,6],[4,5],[4,6],[5,6]]);
+    assert(combinations([3,4,5,6],n=3) == [[3,4,5],[3,4,6],[3,5,6],[4,5,6]]);
 }
-test_permute();
+test_combinations();
 
 
 module test_repeat_entries() {

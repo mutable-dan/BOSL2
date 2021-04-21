@@ -60,7 +60,8 @@ include <structs.scad>
 //   or you can specify a list that has length len(path)-2, omitting the two dummy values.
 //   .
 //   If your input path includes collinear points you must use a cut or radius value of zero for those "corners".  You can
-//   choose a nonzero joint parameter, which will cause extra points to be inserted.  
+//   choose a nonzero joint parameter when the collinear points form a 180 degree angle.  This will cause extra points to be inserted. 
+//   If the collinear points form a spike (0 degree angle) then round_corners will fail. 
 //   .
 //   Examples:
 //   * `method="circle", radius=2`:
@@ -74,8 +75,9 @@ include <structs.scad>
 //   circular roundovers.  For continuous curvature roundovers `$fs` and `$fn` are used and `$fa` is
 //   ignored.  Note that $fn is interpreted as the number of points on the roundover curve, which is
 //   not equivalent to its meaning for rounding circles because roundovers are usually small fractions
-//   of a circular arc.  When doing continuous curvature rounding be sure to use lots of segments or the effect
-//   will be hidden by the discretization.
+//   of a circular arc.  As usual, $fn overrides $fs.  When doing continuous curvature rounding be sure to use lots of segments or the effect
+//   will be hidden by the discretization.  Note that if you use $fn with "smooth" then $fn points are added at each corner, even
+//   if the "corner" is flat, with collinear points, so this guarantees a specific output length.  
 //
 // Figure(2D,Med):
 //   h = 18;
@@ -192,7 +194,7 @@ include <structs.scad>
 //   square = [[0,0],[1,0],[1,1],[0,1]];
 //   spiral = flatten(repeat(concat(square,reverse(square)),5));  // Squares repeat 10 times, forward and backward
 //   squareind = [for(i=[0:9]) each [i,i,i,i]];                   // Index of the square for each point
-//   z = list_range(40)*.2+squareind;
+//   z = count(40)*.2+squareind;
 //   path3d = hstack(spiral,z);                                   // 3D spiral
 //   rounding = squareind/20;
 //       // Setting k=1 means curvature won't be continuous, but curves are as round as possible
@@ -260,10 +262,15 @@ function round_corners(path, method="circle", radius, cut, joint, k, closed=true
         dk = [
               for(i=[0:1:len(path)-1])
                   let(
-                      angle = vector_angle(select(path,i-1,i+1))/2
+                      pathbit = select(path,i-1,i+1),
+                      angle = approx(pathbit[0],pathbit[1]) || approx(pathbit[1],pathbit[2]) ? undef
+                            : vector_angle(select(path,i-1,i+1))/2
                   )
                   (!closed && (i==0 || i==len(path)-1))  ? [0] :          // Force zeros at ends for non-closed
                   parm[i]==0 ? [0]    : // If no rounding requested then don't try to compute parameters
+                  assert(is_def(angle), str("Repeated point in path at index ",i," with nonzero rounding"))
+                  assert(!approx(angle,0), closed && i==0 ? "Closing the path causes it to turn back on itself at the end" :
+                                                            str("Path turns back on itself at index ",i," with nonzero rounding"))
                   (method=="chamfer" && measure=="joint")? [parm[i]] :
                   (method=="chamfer" && measure=="cut")  ? [parm[i]/cos(angle)] :
                   (method=="smooth" && measure=="joint") ? [parm[i],k[i]] :
@@ -277,10 +284,11 @@ function round_corners(path, method="circle", radius, cut, joint, k, closed=true
         lengths = [for(i=[0:1:len(path)]) norm(select(path,i)-select(path,i-1))],
         scalefactors = [
             for(i=[0:1:len(path)-1])
-                min(
+                if (closed || (i!=0 && i!=len(path)-1))
+                 min(
                     lengths[i]/(select(dk,i-1)[0]+dk[i][0]),
                     lengths[i+1]/(dk[i][0]+select(dk,i+1)[0])
-                )
+                 )
         ],
         dummy = verbose ? echo("Roundover scale factors:",scalefactors) : 0
     )
@@ -338,7 +346,7 @@ function _bezcorner(points, parm) =
                         ] : _smooth_bez_fill(points,parm),
                 N = max(3,$fn>0 ?$fn : ceil(bezier_segment_length(P)/$fs))
         )
-        bezier_curve(P,N,endpoint=true);
+        bezier_curve(P,N+1,endpoint=true);
 
 function _chamfcorner(points, parm) =
         let(
@@ -405,7 +413,7 @@ function _rounding_offsets(edgespec,z_dir=1) =
         assert(argsOK,str("Invalid specification with type ",edgetype))
         let(
                 offsets =
-                        edgetype == "profile"? scale([-1,z_dir], p=slice(points,1,-1)) :
+                        edgetype == "profile"? scale([-1,z_dir], p=list_tail(points)) :
                         edgetype == "chamfer"?  chamf_width==0 && chamf_height==0? [] : [[-chamf_width,z_dir*abs(chamf_height)]] :
                         edgetype == "teardrop"? (
                                 radius==0? [] : concat(
@@ -415,13 +423,12 @@ function _rounding_offsets(edgespec,z_dir=1) =
                         ) :
                         edgetype == "circle"? radius==0? [] : [for(i=[1:N]) [radius*(cos(i*90/N)-1), z_dir*abs(radius)*sin(i*90/N)]] :
                         /* smooth */ joint==0 ? [] :
-                        select(
-                                _bezcorner([[0,0],[0,z_dir*abs(joint)],[-joint,z_dir*abs(joint)]], k, $fn=N+2),
-                                1, -1
+                        list_tail(
+                                _bezcorner([[0,0],[0,z_dir*abs(joint)],[-joint,z_dir*abs(joint)]], k, $fn=N+2)
                         )
         )
   
-        quant(extra > 0? concat(offsets, [select(offsets,-1)+[0,z_dir*extra]]) : offsets, 1/1024);
+        quant(extra > 0? concat(offsets, [last(offsets)+[0,z_dir*extra]]) : offsets, 1/1024);
 
 
 
@@ -639,12 +646,12 @@ function _path_join(paths,joint,k=0.5,i=0,result=[],relocate=true,closed=false) 
       d_next = is_vector(joint[i]) ? joint[i][1] : joint[i]
   )
   assert(d_first>=0 && d_next>=0, str("Joint value negative when adding path ",i+1))
+  assert(d_first<path_length(revresult),str("Path ",i," is too short for specified cut distance ",d_first))
+  assert(d_next<path_length(nextpath), str("Path ",i+1," is too short for specified cut distance ",d_next))
   let(
-      firstcut = path_cut(revresult, d_first, direction=true),
-      nextcut = path_cut(nextpath, d_next, direction=true)
+      firstcut = path_cut_points(revresult, d_first, direction=true),
+      nextcut = path_cut_points(nextpath, d_next, direction=true)
   )
-  assert(is_def(firstcut),str("Path ",i," is too short for specified cut distance ",d_first))
-  assert(is_def(nextcut),str("Path ",i+1," is too short for specified cut distance ",d_next))
   assert(!loop || nextcut[1] < len(revresult)-1-firstcut[1], "Path is too short to close the loop")
   let(
      first_dir=firstcut[2],
@@ -662,7 +669,7 @@ function _path_join(paths,joint,k=0.5,i=0,result=[],relocate=true,closed=false) 
       new_result = [each select(result,loop?nextcut[1]:0,len(revresult)-1-firstcut[1]),
                     each bezpath,
                     nextcut[0],
-                    if (!loop) each select(nextpath,nextcut[1],-1)
+                    if (!loop) each list_tail(nextpath,nextcut[1])
                    ]
   )
   i==len(paths)-(closed?1:2)
@@ -892,7 +899,7 @@ function _make_offset_polyhedron(path,offsets, offset_type, flip_faces, quality,
                                  vertexcount=0, vertices=[], faces=[] )=
         offsetind==len(offsets)? (
                 let(
-                        bottom = list_range(n=len(path),s=vertexcount),
+                        bottom = count(len(path),vertexcount),
                         oriented_bottom = !flip_faces? bottom : reverse(bottom)
                 ) [vertices, concat(faces,[oriented_bottom])]
         ) : (
@@ -972,8 +979,8 @@ function offset_sweep(
                 : 0,
 
         // "Extra" height enlarges the result beyond the requested height, so subtract it
-        bottom_height = len(offsets_bot)==0 ? 0 : abs(select(offsets_bot,-1)[1]) - struct_val(bottom,"extra"),
-        top_height = len(offsets_top)==0 ? 0 : abs(select(offsets_top,-1)[1]) - struct_val(top,"extra"),
+        bottom_height = len(offsets_bot)==0 ? 0 : abs(last(offsets_bot)[1]) - struct_val(bottom,"extra"),
+        top_height = len(offsets_top)==0 ? 0 : abs(last(offsets_top)[1]) - struct_val(top,"extra"),
 
         height = one_defined([l,h,height], "l,h,height", dflt=u_add(bottom_height,top_height)),
         middle = height-bottom_height-top_height
@@ -1121,7 +1128,7 @@ function os_mask(mask, out=false, extra,check_valid, quality, offset_maxstep, of
   let(
       points = ([for(pt=polygon_shift(mask,origin_index[0])) [xfactor*max(pt.x,0),-max(pt.y,0)]])
   )
-  os_profile(deduplicate(move(-points[1],p=select(points,1,-1))), extra,check_valid,quality,offset_maxstep,offset);
+  os_profile(deduplicate(move(-points[1],p=list_tail(points))), extra,check_valid,quality,offset_maxstep,offset);
 
 
 // Module: convex_offset_extrude()
@@ -1240,8 +1247,8 @@ module convex_offset_extrude(
         offsets_top = _rounding_offsets(top, 1);
 
         // "Extra" height enlarges the result beyond the requested height, so subtract it
-        bottom_height = len(offsets_bot)==0 ? 0 : abs(select(offsets_bot,-1)[1]) - struct_val(bottom,"extra");
-        top_height = len(offsets_top)==0 ? 0 : abs(select(offsets_top,-1)[1]) - struct_val(top,"extra");
+        bottom_height = len(offsets_bot)==0 ? 0 : abs(last(offsets_bot)[1]) - struct_val(bottom,"extra");
+        top_height = len(offsets_top)==0 ? 0 : abs(last(offsets_top)[1]) - struct_val(top,"extra");
 
         height = one_defined([l,h,height], "l,h,height", dflt=u_add(bottom_height,top_height));
         assert(height>=0, "Height must be nonnegative");
@@ -1575,11 +1582,11 @@ function _stroke_end(width,left, right, spec) =
                         cutright = cut[1],
                         // Create updated paths taking into account clipping for end rotation
                         newright = intright?
-                                concat([pathclip[0]],select(right,pathclip[1],-1)) :
-                                concat([pathextend],select(right,1,-1)),
+                                concat([pathclip[0]],list_tail(right,pathclip[1])) :
+                                concat([pathextend],list_tail(right)),
                         newleft = !intright?
-                                concat([pathclip[0]],select(left,pathclip[1],-1)) :
-                                concat([pathextend],select(left,1,-1)),
+                                concat([pathclip[0]],list_tail(left,pathclip[1])) :
+                                concat([pathextend],list_tail(left)),
                         // calculate corner angles, which are different when the cut is negative (outside corner)
                         leftangle = cutleft>=0?
                                 vector_angle([newleft[1],newleft[0],newright[0]])/2 :
@@ -1589,8 +1596,8 @@ function _stroke_end(width,left, right, spec) =
                                 90-vector_angle([newright[1],newright[0],newleft[0]])/2,
                         jointleft = 8*cutleft/cos(leftangle)/(1+4*bez_k),
                         jointright = 8*cutright/cos(rightangle)/(1+4*bez_k),
-                        pathcutleft = path_cut(newleft,abs(jointleft)),
-                        pathcutright = path_cut(newright,abs(jointright)),
+                        pathcutleft = path_cut_points(newleft,abs(jointleft)),
+                        pathcutright = path_cut_points(newright,abs(jointright)),
                         leftdelete = intright? pathcutleft[1] : pathcutleft[1] + pathclip[1] -1,
                         rightdelete = intright? pathcutright[1] + pathclip[1] -1 : pathcutright[1],
                         leftcorner = line_intersection([pathcutleft[0], newleft[pathcutleft[1]]], [newright[0],newleft[0]]),
@@ -1879,8 +1886,8 @@ function rounded_prism(bottom, top, joint_bot=0, joint_top=0, joint_sides=0, k_b
    let(
      // Entries in the next two lists have the form [edges, vnf] where
      // edges is a list [leftedge, rightedge, topedge, botedge]
-     top_samples = [for(patch=top_patch) bezier_patch_degenerate(patch,splinesteps,reverse=true) ],
-     bot_samples = [for(patch=bot_patch) bezier_patch_degenerate(patch,splinesteps,reverse=false) ],
+     top_samples = [for(patch=top_patch) bezier_patch_degenerate(patch,splinesteps,reverse=false,return_edges=true) ],
+     bot_samples = [for(patch=bot_patch) bezier_patch_degenerate(patch,splinesteps,reverse=true,return_edges=true) ],
      leftidx=0,
      rightidx=1,
      topidx=2,
@@ -1888,14 +1895,14 @@ function rounded_prism(bottom, top, joint_bot=0, joint_top=0, joint_sides=0, k_b
      edge_points =
        [for(i=[0:N-1])
             let(
-               top_edge  = [ top_samples[i][0][rightidx], select(top_samples, i+1)[0][leftidx]],
-               bot_edge  = [ select(bot_samples, i+1)[0][leftidx], bot_samples[i][0][rightidx]],
-               vert_edge = [ bot_samples[i][0][botidx], top_samples[i][0][botidx]]
+               top_edge  = [ top_samples[i][1][rightidx], select(top_samples, i+1)[1][leftidx]],
+               bot_edge  = [ select(bot_samples, i+1)[1][leftidx], bot_samples[i][1][rightidx]],
+               vert_edge = [ bot_samples[i][1][botidx], top_samples[i][1][botidx]]
                )
                each [top_edge, bot_edge, vert_edge] ],
      faces = [
-              [for(i=[0:N-1]) each top_samples[i][0][topidx]],
-              [for(i=[N-1:-1:0]) each reverse(bot_samples[i][0][topidx])],
+              [for(i=[0:N-1]) each top_samples[i][1][topidx]],
+              [for(i=[N-1:-1:0]) each reverse(bot_samples[i][1][topidx])],
               for(i=[0:N-1]) [
                                  bot_patch[i][4][4],
                                  select(bot_patch,i+1)[4][0],
@@ -1927,123 +1934,13 @@ function rounded_prism(bottom, top, joint_bot=0, joint_top=0, joint_sides=0, k_b
           "Roundovers interfere with each other on bottom face: either input is self intersecting or top joint length is too large")
     assert(debug || (verify_vert==[] && verify_horiz==[]), "Curvature continuity failed")
     let(
-        vnf = vnf_merge([ each subindex(top_samples,1),
-                          each subindex(bot_samples,1),
+        vnf = vnf_merge([ each subindex(top_samples,0),
+                          each subindex(bot_samples,0),
                           for(pts=edge_points) vnf_vertex_array(pts),
                           vnf_triangulate(vnf_add_faces(EMPTY_VNF,faces))
                        ])
     )
     debug ? [concat(top_patch, bot_patch), vnf] : vnf;
-
-
-// This function takes a bezier patch as input and returns [edges, vnf], where
-// edges = [leftedge, rightedge, topedge, bottomedge]
-// gives the points along the edges of the patch, and the vnf is the patch vnf.
-// It checks for various types of degeneracy and uses half or full triangular
-// sampling on degenerate patches.
-
-function bezier_patch_degenerate(patch, splinesteps=16, reverse=false) =
-    assert(is_num(splinesteps), "splinesteps must be a number")
-    let(
-        top_degen = patch[0][0] == select(patch[0],-1),
-        bot_degen = select(patch,-1)[0] == select(select(patch,-1),-1),
-        left_degen = patch[0][0] == select(patch,-1)[0],
-        right_degen = select(patch[0],-1) == select(select(patch,-1),-1),
-        samplepts = list_range(splinesteps+1)/splinesteps
-    )
-    top_degen && bot_degen && left_degen && right_degen ?   // fully degenerate case
-        [repeat([patch[0][0]],4), EMPTY_VNF] :
-    top_degen && bot_degen ?                                // double degenerate case (top/bot)
-        let(  
-            pts = bezier_points(subindex(patch,0), samplepts)
-        )
-        [[pts,pts,[pts[0]],[select(pts,-1)]], EMPTY_VNF] :
-    left_degen && right_degen ?                             // double degenerate case (sides)
-       let(
-          pts = bezier_points(patch[0], samplepts)
-       )
-       [[[pts[0]], [select(pts,-1)], pts, pts], EMPTY_VNF] :
-    !top_degen && !bot_degen ?                             // non-degenerate case
-       let(
-           k=echo("non-degenerate case"),
-           pts = bezier_patch_points(patch, samplepts, samplepts)
-       )
-       [
-        [subindex(pts,0), subindex(pts,len(pts)-1), pts[0], select(pts,-1)],
-        vnf_vertex_array(pts, reverse=reverse)
-       ] :
-    bot_degen ?                                           // only bottom is degenerate
-       let(
-           result = bezier_patch_degenerate(reverse(patch), splinesteps=splinesteps, reverse=!reverse)
-       )
-       [
-          [reverse(result[0][0]), reverse(result[0][1]), (result[0][3]), (result[0][2])],
-          result[1]
-       ] :
-    // at this point top_degen is true                   // only top is degenerate
-       let(
-           full_degen = patch[1][0] == select(patch[1],-1),
-           rowmax = full_degen ? list_range(splinesteps+1) :
-                                 [for(j=[0:splinesteps]) j<=splinesteps/2 ? 2*j : splinesteps],
-           vbb=echo("single degenerate case"),
-           bpatch = [for(i=[0:1:len(patch[0])-1]) bezier_points(subindex(patch,i), samplepts)],
-           pts = [
-                  [bpatch[0][0]],
-                  for(j=[1:splinesteps]) bezier_points(subindex(bpatch,j), list_range(rowmax[j]+1)/rowmax[j])
-                 ],
-           vnf = vnf_tri_array(pts, reverse=reverse)
-        ) [
-            [
-             subindex(pts,0),
-             [for(row=pts) select(row,-1)],
-             pts[0],
-             select(pts,-1),
-            ],
-            vnf
-          ];
-
-
-// This function produces a vnf with a triangulation for a list of rows
-// where the number of points between rows differs by at most 2.
-// It's a generalization of vnf_vertex_array.
-function vnf_tri_array(points, row_wrap=false, reverse=false) =
-   let(
-       lens = [for(row=points) len(row)],
-       rowstarts = [0,each cumsum(lens)],
-       faces =
-          [for(i=[0:1:len(points) - 1 - (row_wrap ? 0 : 1)]) each
-            let(
-                rowstart = rowstarts[i],
-                nextrow = select(rowstarts,i+1),
-                delta = select(lens,i+1)-lens[i]
-            )
-            delta == 0 ?
-              [for(j=[0:1:lens[i]-2]) reverse ? [j+rowstart+1, j+rowstart, j+nextrow] : [j+rowstart, j+rowstart+1, j+nextrow],
-               for(j=[0:1:lens[i]-2]) reverse ? [j+rowstart+1, j+nextrow, j+nextrow+1] : [j+rowstart+1, j+nextrow+1, j+nextrow]] :
-            delta == 1 ?
-              [for(j=[0:1:lens[i]-2]) reverse ? [j+rowstart+1, j+rowstart, j+nextrow+1] : [j+rowstart, j+rowstart+1, j+nextrow+1],
-               for(j=[0:1:lens[i]-1]) reverse ? [j+rowstart, j+nextrow, j+nextrow+1] : [j+rowstart, j+nextrow+1, j+nextrow]] :
-            delta == -1 ?
-              [for(j=[0:1:lens[i]-3]) reverse ? [j+rowstart+1, j+nextrow, j+nextrow+1]: [j+rowstart+1, j+nextrow+1, j+nextrow],
-               for(j=[0:1:lens[i]-2]) reverse ? [j+rowstart+1, j+rowstart, j+nextrow] : [j+rowstart, j+rowstart+1, j+nextrow]] :
-            let(count = floor((lens[i]-1)/2))
-            delta == 2 ?
-              [
-               for(j=[0:1:count-1]) reverse ? [j+rowstart+1, j+rowstart, j+nextrow+1] : [j+rowstart, j+rowstart+1, j+nextrow+1],       // top triangles left
-               for(j=[count:1:lens[i]-2]) reverse ? [j+rowstart+1, j+rowstart, j+nextrow+2] : [j+rowstart, j+rowstart+1, j+nextrow+2], // top triangles right
-               for(j=[0:1:count]) reverse ? [j+rowstart, j+nextrow, j+nextrow+1] : [j+rowstart, j+nextrow+1, j+nextrow],                        // bot triangles left
-               for(j=[count+1:1:select(lens,i+1)-2]) reverse ? [j+rowstart-1, j+nextrow, j+nextrow+1] : [j+rowstart-1, j+nextrow+1, j+nextrow], // bot triangles right
-              ] :
-             delta == -2 ?
-              [
-               for(j=[0:1:count-2]) reverse ? [j+nextrow, j+nextrow+1, j+rowstart+1] : [j+nextrow, j+rowstart+1, j+nextrow+1],
-               for(j=[count-1:1:lens[i]-4]) reverse ? [j+nextrow,j+nextrow+1,j+rowstart+2] : [j+nextrow,j+rowstart+2, j+nextrow+1],
-               for(j=[0:1:count-1]) reverse ? [j+nextrow, j+rowstart+1, j+rowstart] : [j+nextrow, j+rowstart, j+rowstart+1],
-               for(j=[count:1:select(lens,i+1)]) reverse ? [ j+nextrow-1, j+rowstart+1, j+rowstart]: [ j+nextrow-1, j+rowstart, j+rowstart+1],
-              ] :
-            assert(false,str("Unsupported row length difference of ",delta, " between row ",i," and ",i+1))
-        ])
-    [flatten(points), faces];
 
 
 
